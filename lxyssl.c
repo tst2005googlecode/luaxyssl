@@ -436,7 +436,7 @@ static const luaL_reg Rm[] = {
 	{ NULL,		NULL	}
 };
 
-LUA_API int luaopen_xyssl(lua_State *L)
+LUA_API int luaopen_lxyssl(lua_State *L)
 {
  havege_init( &hs );
 
@@ -449,7 +449,7 @@ LUA_API int luaopen_xyssl(lua_State *L)
  lua_settable (L, -3);
  luaL_openlib(L,NULL,R,0);
 
- luaL_openlib(L,"xyssl",Rm,0);
+ luaL_openlib(L,"lxyssl",Rm,0);
  lua_pushliteral(L,"version");			/** version */
  lua_pushliteral(L,MYVERSION);
  lua_settable(L,-3);
