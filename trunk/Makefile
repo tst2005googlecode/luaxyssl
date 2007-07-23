@@ -8,7 +8,7 @@ LUABIN= $(LUA)/bin
 XYSSL_INC=/home/colinux/xyssl-0.7/include
 XYSSL_LIB=/home/colinux/xyssl-0.7/library
 
-MYNAME= xyssl
+MYNAME= lxyssl
 # no need to change anything below here
 CFLAGS= $(INCS) $(DEFS) $(WARN) -O2 $G -I$(XYSSL_INC)
 LDFLAGS= -L$(XYSSL_LIB)
