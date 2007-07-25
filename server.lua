@@ -2,7 +2,7 @@
 require'socket'
 require'lxyssl'
 t=socket.bind('localhost',4433)
-x=lxyssl.new(1) --1 is ssl server nil or 0 is client
+x=lxyssl.ssl(1) --1 is ssl server nil or 0 is client
 x:keycert() --setup server cert, would use embedded testing one none is given
 
 r=0
