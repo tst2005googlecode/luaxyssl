@@ -1,7 +1,7 @@
 require'lxyssl'
 require'socket'
 t=socket.tcp()
-x=lxyssl.new()
+x=lxyssl.ssl()
 x:keycert()
 x:authmode(2,'localhost')
 x:connect(t:getfd())
