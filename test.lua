@@ -9,16 +9,20 @@ string.hex = function(x)
 end
 
 --host='www.google.com'
-host='www.yahoo.com'
-t=socket.tcp()
-x=lxyssl.ssl()
-b=bufferio.wrap(x,true)
+host='www.dreamhost.com'
 --x:connect(t:getfd())
-b:connect(t:getfd())
-t:connect(host,443)
 --b:settimeout(-1)
 msg = string.format('GET / HTTP/1.1\r\nHost: %s\r\n\r\n', host)
-for i =1,1 do
+x=lxyssl.ssl()
+b=bufferio.wrap(x,true)
+for i =1,10 do
+t=socket.tcp()
+t:connect(host,443)
+b:connect(t:getfd())
+if id then 
+    lid = id
+    b:sessinfo(id,master) 
+end
 c=0
 print(msg)
 repeat
@@ -37,8 +41,14 @@ repeat
     else
     end
 until err == "closed" or err=="nossl"
+if err ~= "nossl" and err ~= "nossl" then b:receive('*a') end
+id,master = b:sessinfo()
+if id==lid then print("session reuse", id:hex(), master:hex()) end
+--print(x:cipher(), x:peer(), x:name())
+b:reset()
+--b:close()
+t:close()
 end
-print(x:cipher(), x:peer(), x:name())
 
 md5=lxyssl.hash('md5')
 md5:update('a')
@@ -65,6 +75,8 @@ assert(lxyssl.aes(key):decrypt(lxyssl.aes(key):encrypt(data)) == data)
 assert(lxyssl.aes(key):cbc_decrypt(lxyssl.aes(key):cbc_encrypt(data,iv),iv) == data)
 assert(lxyssl.aes(key):cfb_decrypt(lxyssl.aes(key):cfb_encrypt(data,iv),iv) == data)
 assert(lxyssl.rc4(key):crypt(lxyssl.rc4(key):crypt(data)) == data)
+assert(#lxyssl.rand(2000) == 2000)
+assert(lxyssl.rand(2000) ~= lxyssl.rand(2000))
 t = {}
 e = lxyssl.aes(key)
 iv=lxyssl.hash('md5'):digest(key)
@@ -101,4 +113,3 @@ for i=1,10 do
 end
 
 assert(table.concat(t,"")==data:rep(10))
-

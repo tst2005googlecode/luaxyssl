@@ -72,12 +72,19 @@ typedef struct {
  x509_cert cacert;
  x509_cert mycert;
  rsa_context mykey;
- unsigned char session_table[SSL_SESSION_TBL_LEN];
  double timeout;
  int last_send_size;
  char *peer_cn;
  int closed;
+ char *dhm_P;
+ char *dhm_G;
 } xyssl_context;
+
+/* sharing session info across ssl context in server mode */
+
+unsigned char default_session_table[SSL_SESSION_TBL_LEN];
+unsigned char *session_table = default_session_table;
+int malloc_sidtable = 0;
 
 #define EXPORT_HASH_FUNCTIONS
 #if 0
@@ -128,11 +135,41 @@ static int Pselect(int fd, double t, int w)
     }
 }
 
+
 static xyssl_context *Pget(lua_State *L, int i)
 {
  if (luaL_checkudata(L,i,MYTYPE)==NULL) luaL_typerror(L,i,MYTYPE);
  return lua_touserdata(L,i);
 }
+
+static int Preset(lua_State *L)			/** reset(c) */
+{
+ xyssl_context *xyssl=Pget(L,1);
+ ssl_context *ssl=&xyssl->ssl;
+ int is_server = ssl->endpoint;
+ int authmode = ssl->authmode;
+ int ret;
+
+ #if 0
+ #endif
+ ssl_free(ssl);
+ ret = ssl_init(ssl,is_server ? 0 : 1);
+ ssl_set_endpoint( ssl, is_server ? SSL_IS_SERVER : SSL_IS_CLIENT );
+ ssl_set_authmode( ssl, authmode );
+
+ ssl_set_rng_func( ssl, havege_rand, &hs );
+ ssl_set_ciphlist( ssl, my_preferred_ciphers);
+ #if 0
+ ssl_set_ciphlist( ssl, ssl_default_ciphers );
+ #endif
+
+ if (is_server) {
+    ssl_set_sidtable( ssl, session_table );
+    ssl_set_dhm_vals( ssl, xyssl->dhm_P, xyssl->dhm_G );
+ }
+ return ret;
+}
+
 
 static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
 {
@@ -527,6 +564,23 @@ static int Lhash_digest(lua_State *L)
 
 #endif
 
+static int Lsessions(lua_State *L)
+{
+     int cnt = luaL_optinteger(L,1,8);
+     int now_size = malloc_sidtable ? malloc_sidtable : sizeof(default_session_table)/128;
+
+     if (cnt < 8 || cnt > 512) 
+        luaL_error(L,"xyssl.sessions: sessions table entries must be within 8 and 512");
+
+    if (cnt != now_size) {
+        if (malloc_sidtable) free(session_table);
+        session_table = malloc(cnt*128);
+        malloc_sidtable = cnt;
+    }
+    lua_pushnumber(L,now_size);
+    return 1;
+}
+
 static int Lssl(lua_State *L)
 {
  int ret;
@@ -540,6 +594,7 @@ static int Lssl(lua_State *L)
  xyssl->timeout = 0.1;
  xyssl->last_send_size = -1;
 
+ 
  luaL_getmetatable(L,MYTYPE);
  lua_setmetatable(L,-2);
 
@@ -561,15 +616,32 @@ static int Lssl(lua_State *L)
  #endif
 
  if (is_server) {
-    ssl_set_sidtable( ssl, xyssl->session_table );
+    ssl_set_sidtable( ssl, session_table );
     ssl_set_dhm_vals( ssl, dhm_P, dhm_G );
+    xyssl->dhm_P = malloc(strlen(dhm_P)+1);
+    xyssl->dhm_G = malloc(strlen(dhm_G)+1);
+    strcpy(xyssl->dhm_P, dhm_P);
+    strcpy(xyssl->dhm_G, dhm_G);
  }
  return 1;
 }
 
 static int Lconnect(lua_State *L)			/** connect(read_fd[,write_fd]) */
 {
+ xyssl_context *xyssl=Pget(L,1);
+
+ if (xyssl->closed) {
+    int ret = Preset(L);
+    if (ret) {
+        lua_pushnil(L);
+        lua_pushnumber(L, ret);
+        return 2;
+    }
+ }
+ xyssl->closed = 0;
+
  Psetfd(L);
+ 
  lua_pushnumber(L, 1);
 
  return 1;
@@ -579,25 +651,47 @@ static int Pclose(lua_State *L)
 {
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
- x509_cert *cacert = &xyssl->cacert;
- x509_cert *mycert= &xyssl->mycert;
- rsa_context *rsa = &xyssl->mykey;
-
- x509_free_cert( cacert );
- x509_free_cert( mycert );
- rsa_free( rsa );
 
  ssl_close_notify( ssl );
- ssl_free(ssl);
- if (xyssl->peer_cn) {
-    free(xyssl->peer_cn);
-    xyssl->peer_cn = NULL;
- }
+ xyssl->closed = 1;
+
  return 0;
 }
+
 static int Lclose(lua_State *L)			/** close(c) */
 {
  return Pclose(L);
+
+}
+static int Lsessinfo(lua_State *L)			/** sessinfo(c) */
+{
+ xyssl_context *xyssl=Pget(L,1);
+ int id_len;
+ char *sessid = (char *)luaL_optlstring(L, 2, NULL, &id_len);
+ int master_len;
+ char *master = (char *)luaL_optlstring(L, 3, NULL, &master_len);
+ 
+ ssl_context *ssl=&xyssl->ssl;
+ lua_pushlstring(L,ssl->sessid, ssl->sidlen);
+ lua_pushlstring(L,ssl->master, sizeof(ssl->master));
+ if (sessid && master) {
+    ssl->sidlen = id_len < sizeof(ssl->sessid) ? id_len : sizeof(ssl->sessid);
+    memcpy(ssl->sessid, sessid, ssl->sidlen);
+    memcpy(ssl->master, master, master_len < sizeof(ssl->master) ? master_len : sizeof(ssl->master));
+ }
+ return 2;
+}
+
+static int Lreset(lua_State *L)			/** reset(c) */
+{
+ int ret = Preset(L);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushnumber(L, ret);
+    return 2;
+ }
+ lua_pushnumber(L, 1);
+ return 1;
 }
 
 static int Lsend(lua_State *L)		/** send(data) */
@@ -720,7 +814,32 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
 
 static int Lgc(lua_State *L)		/** garbage collect */
 {
- return Pclose(L);
+ xyssl_context *xyssl=Pget(L,1);
+ ssl_context *ssl=&xyssl->ssl;
+ x509_cert *cacert = &xyssl->cacert;
+ x509_cert *mycert= &xyssl->mycert;
+ rsa_context *rsa = &xyssl->mykey;
+ int ret = Pclose(L);
+
+ x509_free_cert( cacert );
+ x509_free_cert( mycert );
+ rsa_free( rsa );
+ ssl_free(ssl);
+
+ if (xyssl->peer_cn) {
+    free(xyssl->peer_cn);
+    xyssl->peer_cn = NULL;
+ }
+ if (xyssl->dhm_P) {
+    free(xyssl->dhm_P);
+    xyssl->dhm_P = NULL;
+ }
+ if (xyssl->dhm_G) {
+    free(xyssl->dhm_G);
+    xyssl->dhm_G = NULL;
+ }
+
+ return 0;
 }
 
 static int Lkeycert(lua_State *L)		/** set the key/cert to use */
@@ -957,9 +1076,11 @@ static const luaL_reg R[] =
 	{ "receive",Lreceive	},
 	{ "__gc",	Lgc	},
 	{ "close",	Lclose},
+	{ "reset",	Lreset},
 	{ "getfd",	Lgetfd},
 	{ "setfd",	Lsetfd},
 	{ "dirty",Ldirty},
+    { "sessinfo",Lsessinfo },
 	{ "handshake",Lhandshake},
 	{ "authmode",	Lauthmode},
 	{ "verify",	Lverify},
@@ -1001,6 +1122,7 @@ static const luaL_reg Rrc4[] =
 
 static const luaL_reg Rm[] = {
 	{ "ssl",	Lssl	},
+	{ "sessions",	Lsessions},
 	{ "rand",	Lrand	},
 	{ "aes",	Laes	},
 	{ "rc4",	Lrc4	},
