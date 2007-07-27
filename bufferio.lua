@@ -86,7 +86,7 @@ function receive(self, pattern, part)
         else
             data = self._last
             self._last = ""
-            if err=="timeout" then return nil,err
+            if err=="timeout" then return nil, err, data or ""
             else return nil, err or "closed", data end
         end
     end

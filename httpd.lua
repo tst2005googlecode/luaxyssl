@@ -8,16 +8,37 @@ local function header(l)
     return k:match("^%s*(.-)%s*$"), v:match("^%s*(.-)%s*$")
 end
 
+local function keep_alive(proto, c)
+    if proto:find('1.0') and c == 'keep-alive' then
+        return "Connection: Keep-Alive\r\n"
+    end
+end
+
+local function H501(verb, h,uri,proto,read,write)
+    local data
+    write(format("%s 501 No Implemented\r\n", proto))
+    if alive then write(alive) end
+    write("Content-Type: plain/text\r\n")
+    local r  = format("%s %s\r\n", verb, uri)
+    write(format("Content-Length: %i\r\n", #r))
+    write("\r\n")
+    write(r)
+end
+
 local dispatch={
-    ['GET'] = function(h,uri,read,write)
-        local data= format("GET %s\r\n", uri)
-        write("HTTP/1.1 200 OK\r\n")
+    ['GET'] = function(verb, h,uri,proto,read,write)
+        local data= format("%s %s\r\n", verb, uri)
+        local alive = keep_alive(proto, h['connection'])
+        write(format("%s 200 OK\r\n",proto))
+        if alive then write(alive) end
         write("Content-Type: plain/text\r\n")
         write(format("Content-Length: %i\r\n", #data))
         write("\r\n")
         write(data)
     end,
-    ['PUT'] = function(h,uri,read,write)
+    ['PUT'] = function(verb, h,uri,proto,read,write)
+        local data
+        local alive = keep_alive(proto, h['connection'])
         if h['content-length'] then
            data=b:receive(h['content-length'])
         elseif h['transfer-encoding'] and h['transfer-encoding']:find('chunked') then
@@ -30,23 +51,27 @@ local dispatch={
                 end
                 read()
             until cnt == 0
+            data = table.concat(c,"")
         else
+            
         end
-        write("HTTP/1.1 204 No Content\r\n'")
-        write("Content-Type: plain/text\r\n'")
-        write("\r\n'")
-        write(format("PUT %s\r\n", uri))
+        write(format("%s 200 OK\r\n", proto))
+        if alive then write(alive) end
+        write("Content-Type: plain/text\r\n")
+        local r  = format("%s %s size %i\r\n", verb, uri, #data)
+        write(format("Content-Length: %i\r\n", #r))
+        write("\r\n")
+        write(r)
     end,
 }
 local function handler(skt)
     local x = lxyssl.ssl(1) --1 is ssl server nil or 0 is client
-    local b = bufferio.wrap(x)
+    local b = bufferio.wrap(x,true)
 
     b:keycert() --setup server cert, would use embedded testing one none is given
     b:connect(skt:getfd())
     
     b:settimeout(-1)
-   
     local action = b:receive()
     while action do
         local h = {}
@@ -62,8 +87,12 @@ local function handler(skt)
             end
         until err=="closed" or err=="nossl" or #l==0
         local f = dispatch[verb:upper()]
-        if f then f(h, resource, function(...) b:receive(...) end, function(...) b:send(...) end) 
-        else b:send("HTTP/1.1 501 Function not implemented\r\n\r\n") end
+        if not f then f = dispatch['501'] end
+        if f then 
+            f(verb, h, resource, proto, function(...) return b:receive(...) end, function(...) return b:send(...) end) 
+        else
+            H501(verb, h, resource, proto, function(...) return b:receive(...) end, function(...) return b:send(...) end) 
+        end
         if err=="closed" or err=="nossl" then break end
         action = b:receive()
     end

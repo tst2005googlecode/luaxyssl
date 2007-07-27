@@ -91,6 +91,10 @@ int malloc_sidtable = 0;
 #define EXPORT_SHA2
 #endif
 
+typedef void (*hash_start_func)(void *);
+typedef void (*hash_update_func)(void *, unsigned char *, int);
+typedef unsigned char* (*hash_finish_func)(void *, unsigned char*);
+
 typedef struct {
     union {
         md5_context md5;
@@ -101,7 +105,7 @@ typedef struct {
     } eng;
     void (*starts)(void *);
     void (*update)(void *, unsigned char*, int);
-    void (*finish)(void *, unsigned char*);
+    unsigned char* (*finish)(void *, unsigned char*);
     int hash_size;
     int id;
 } hash_context;
@@ -165,7 +169,7 @@ static int Preset(lua_State *L)			/** reset(c) */
 
  if (is_server) {
     ssl_set_sidtable( ssl, session_table );
-    ssl_set_dhm_vals( ssl, xyssl->dhm_P, xyssl->dhm_G );
+    ssl_set_dhm_vals( ssl, xyssl->dhm_P ? xyssl->dhm_P : default_dhm_P, xyssl->dhm_G ? xyssl->dhm_G : default_dhm_G);
  }
  return ret;
 }
@@ -224,24 +228,24 @@ static int Lhash(lua_State *L)
         md5_starts(&obj->eng.md5);
         obj->id = MD5;
         obj->hash_size = 16;
-        obj->starts = md5_starts;
-        obj->update = md5_update;
-        obj->finish = md5_finish;
+        obj->starts = (hash_start_func) md5_starts;
+        obj->update = (hash_update_func) md5_update;
+        obj->finish = (hash_finish_func) md5_finish;
      } else if (memcmp(type,"sha1",4)==0) {
         sha1_starts(&obj->eng.sha1);
         obj->id = SHA1;
         obj->hash_size = 20;
-        obj->starts = sha1_starts;
-        obj->update = sha1_update;
-        obj->finish = sha1_finish;
+        obj->starts = (hash_start_func) sha1_starts;
+        obj->update = (hash_update_func) sha1_update;
+        obj->finish = (hash_finish_func) sha1_finish;
 #ifdef EXPORT_SHA2
      } else if (memcmp(type,"sha2",4)==0) {
         sha2_starts(&obj->eng.sha2,0);
         obj->id = SHA2;
         obj->hash_size = 32;
-        obj->starts = sha2_starts;
-        obj->update = sha2_update;
-        obj->finish = sha2_finish;
+        obj->starts = (hash_start_func) sha2_starts;
+        obj->update = (hash_update_func) sha2_update;
+        obj->finish = (hash_finish_func) sha2_finish;
 #endif
      } else {
         lua_pop(L, 1);
@@ -253,16 +257,16 @@ static int Lhash(lua_State *L)
         md5_hmac_starts(&obj->eng.md5, (unsigned char *)key, klen);
         obj->id = HMAC_MD5;
         obj->hash_size = 16;
-        obj->starts = md5_starts;
-        obj->update = md5_hmac_update;
-        obj->finish = md5_hmac_finish;
+        obj->starts = (hash_start_func) md5_starts;
+        obj->update = (hash_update_func) md5_hmac_update;
+        obj->finish = (hash_finish_func) md5_hmac_finish;
      } else if (memcmp(type,"hmac-sha1",9)==0) {
         sha1_hmac_starts(&obj->eng.sha1, (unsigned char *)key, klen);
         obj->id = HMAC_SHA1;
         obj->hash_size = 20;
-        obj->starts = sha1_starts;
-        obj->update = sha1_hmac_update;
-        obj->finish = sha1_hmac_finish;
+        obj->starts = (hash_start_func) sha1_starts;
+        obj->update = (hash_update_func) sha1_hmac_update;
+        obj->finish = (hash_finish_func) sha1_hmac_finish;
 #ifdef EXPORT_SHA2
      } else if (memcmp(type,"hmac-sha2",9)==0) {
         sha2_hmac_starts(&obj->eng.sha2, 0, (unsigned char *)key, klen);
@@ -569,15 +573,24 @@ static int Lsessions(lua_State *L)
      int cnt = luaL_optinteger(L,1,8);
      int now_size = malloc_sidtable ? malloc_sidtable : sizeof(default_session_table)/128;
 
-     if (cnt < 8 || cnt > 512) 
-        luaL_error(L,"xyssl.sessions: sessions table entries must be within 8 and 512");
+     if (cnt < 8 || cnt > 65536) 
+        luaL_error(L,"xyssl.sessions: sessions table entries must be within 8 and 65536");
 
     if (cnt != now_size) {
-        if (malloc_sidtable) free(session_table);
-        session_table = malloc(cnt*128);
+        unsigned char *new = malloc(cnt*128);
+        if (!new) {
+            lua_pushnil(L);
+            lua_pushstring(L,"oom");
+            return 2;
+        }
+        memcpy(new, session_table, (now_size > cnt ? cnt : now_size)*128);
+        if (malloc_sidtable) {
+            free(session_table);
+        }
+        session_table = new;
         malloc_sidtable = cnt;
     }
-    lua_pushnumber(L,now_size);
+    lua_pushnumber(L, now_size);
     return 1;
 }
 
@@ -620,8 +633,8 @@ static int Lssl(lua_State *L)
     ssl_set_dhm_vals( ssl, dhm_P, dhm_G );
     xyssl->dhm_P = malloc(strlen(dhm_P)+1);
     xyssl->dhm_G = malloc(strlen(dhm_G)+1);
-    strcpy(xyssl->dhm_P, dhm_P);
-    strcpy(xyssl->dhm_G, dhm_G);
+    if (xyssl->dhm_P) strcpy(xyssl->dhm_P, dhm_P);
+    if (xyssl->dhm_G) strcpy(xyssl->dhm_G, dhm_G);
  }
  return 1;
 }
@@ -707,7 +720,7 @@ static int Lsend(lua_State *L)		/** send(data) */
  int start = luaL_optinteger(L,3,1);
 
  if (ssl->out_uoff && (size != xyssl->last_send_size || start-1 != ssl->out_uoff)) {
-    luaL_error(L,"xyssl(send): partial send data in buffer, must use data and return index+1 from previous send");
+    luaL_error(L, "xyssl(send): partial send data in buffer(%i, must use data and return index+1 from previous send");
     }
 
  if (xyssl->closed) {
