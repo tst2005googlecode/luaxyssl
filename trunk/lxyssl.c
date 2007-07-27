@@ -159,7 +159,7 @@ static int Preset(lua_State *L)			/** reset(c) */
  #if 0
  #endif
  ssl_free(ssl);
- ret = ssl_init(ssl,is_server ? 0 : 1);
+ ret = ssl_init(ssl, is_server ? 0 : 1);
  ssl_set_endpoint( ssl, is_server ? SSL_IS_SERVER : SSL_IS_CLIENT );
  ssl_set_authmode( ssl, authmode );
 
