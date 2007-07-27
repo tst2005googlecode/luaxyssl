@@ -111,7 +111,7 @@ typedef struct {
 } hash_context;
 
 
-#define MYVERSION	"XySSL for " LUA_VERSION " 0.1"
+#define MYVERSION	"XySSL for " LUA_VERSION " 0.2"
 #define MYTYPE		"XySSL SSL object"
 #define MYHASH      "XySSL Hash object"
 #define MYAES       "XySSL AES object"
