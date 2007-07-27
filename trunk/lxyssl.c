@@ -52,9 +52,11 @@ int my_preferred_ciphers[] =
     SSL3_RSA_RC4_128_MD5,
     SSL3_RSA_RC4_128_SHA,
     TLS1_EDH_RSA_AES_256_SHA,
-    SSL3_EDH_RSA_DES_168_SHA,
     TLS1_RSA_AES_256_SHA,
+#if 0
+    SSL3_EDH_RSA_DES_168_SHA,
     SSL3_RSA_DES_168_SHA,
+#endif
     0
 };
 
@@ -1046,6 +1048,15 @@ static int Ldirty(lua_State *L)		/** dirty() */
  return 1;
 }
 
+static int Ledh(lua_State *L)		/** edh() */
+{
+ xyssl_context *xyssl=Pget(L,1);
+ int edh = lua_optinteger(L,2,0);
+ ssl_context *ssl=&xyssl->ssl;
+ if (edh) ssl_set_ciphlist( ssl, ssl_default_ciphers );
+ return 0;
+}
+
 static int Ltostring(lua_State *L)		/** tostring(c) */
 {
  xyssl_context *xyssl=Pget(L,1);
@@ -1093,6 +1104,7 @@ static const luaL_reg R[] =
 	{ "getfd",	Lgetfd},
 	{ "setfd",	Lsetfd},
 	{ "dirty",Ldirty},
+	{ "edh",Ledh},
     { "sessinfo",Lsessinfo },
 	{ "handshake",Lhandshake},
 	{ "authmode",	Lauthmode},
