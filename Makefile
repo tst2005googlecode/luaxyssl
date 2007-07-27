@@ -5,8 +5,9 @@ LUA= /usr/local
 LUAINC= $(LUA)/include
 LUALIB= $(LUA)/lib
 LUABIN= $(LUA)/bin
-XYSSL_INC=/home/colinux/xyssl-0.7/include
-XYSSL_LIB=/home/colinux/xyssl-0.7/library
+XYSSL_VERSION=0.7
+XYSSL_INC=/home/colinux/xyssl-$(XYSSL_VERSION)/include
+XYSSL_LIB=/home/colinux/xyssl-$(XYSSL_VERSION)/library
 XYSSL_FEATURES	= -DHAVE_LONGLONG -DHAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 -DNO_DES
 MYNAME= lxyssl
 # no need to change anything below here
