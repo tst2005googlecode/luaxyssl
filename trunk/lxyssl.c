@@ -1051,7 +1051,7 @@ static int Ldirty(lua_State *L)		/** dirty() */
 static int Ledh(lua_State *L)		/** edh() */
 {
  xyssl_context *xyssl=Pget(L,1);
- int edh = lua_optinteger(L,2,0);
+ int edh = luaL_optinteger(L,2,0);
  ssl_context *ssl=&xyssl->ssl;
  if (edh) ssl_set_ciphlist( ssl, ssl_default_ciphers );
  return 0;
