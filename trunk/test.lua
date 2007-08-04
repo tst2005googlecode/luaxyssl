@@ -8,6 +8,36 @@ string.hex = function(x)
     return table.concat(t,"")
 end
 
+local function proto_index(o, k)  
+    --local v = o.__proto[k]
+    local v = rawget(o, '__proto')[k]
+    if type(v) == "function" then return function(x,...) return v(o.__proto,...) end 
+    else return v end
+end
+
+local function prototype(o)
+    return setmetatable({__proto=o}, {__index = proto_index })
+end
+
+s = prototype(socket.tcp())
+s:connect('www.yahoo.com',80)
+x = lxyssl.event(s:getfd(),s)
+s.event = x
+--s.dirty = function(...) print("dirty called"); return true end
+i = 0
+s:send("GET / HTTP/1.1\r\nHost: www.yahoo.com\r\n\r\n")
+t1=os.time()
+repeat
+--a,b=lxyssl.ev_select({s},{s},0.1)
+a,b=socket.select({s},{s},0.1)
+i = i + 1
+until #a > 0
+t2=os.time()
+print(os.difftime(t2,t1))
+for k,v in pairs(b) do print("writable",i,k,v,s) end
+for k,v in pairs(a) do print("readable",i,k,v,s) end
+do return 1 end
+
 --host='www.google.com'
 host='www.dreamhost.com'
 --x:connect(t:getfd())
@@ -113,3 +143,4 @@ for i=1,10 do
 end
 
 assert(table.concat(t,"")==data:rep(10))
+
