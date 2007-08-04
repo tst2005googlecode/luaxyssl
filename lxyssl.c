@@ -10,7 +10,13 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
-
+#include <sys/time.h>
+#include <errno.h>
+#include <poll.h>
+#define USE_LIBEVENT
+#ifdef USE_LIBEVENT
+#include <event.h>
+#endif
 #define LUA_LIB
 
 #include "lua.h"
@@ -82,11 +88,36 @@ typedef struct {
  char *dhm_G;
 } xyssl_context;
 
+#ifdef USE_LIBEVENT
+typedef struct {
+    struct event_base *base;
+    int event_fd_map;
+    int r_cnt;
+    int w_cnt;
+    int rtab;
+    int wtab;
+    int o_rtab;
+    int o_wtab;
+    lua_State *L;
+} libevent_context;
+
+typedef struct {
+    struct event ev;
+    int open;
+    int fd;
+    int want;
+    libevent_context *libevent;
+} event_context;
+
+libevent_context libevent_handle;
+#endif
+
 /* sharing session info across ssl context in server mode */
 
 unsigned char default_session_table[SSL_SESSION_TBL_LEN];
 unsigned char *session_table = default_session_table;
 int malloc_sidtable = 0;
+
 
 #define EXPORT_HASH_FUNCTIONS
 #if 0
@@ -118,6 +149,7 @@ typedef struct {
 #define MYHASH      "XySSL Hash object"
 #define MYAES       "XySSL AES object"
 #define MYRC4       "XySSL RC4 object"
+#define MYEVENT     "Libevent object"
 
 havege_state hs;
 
@@ -125,14 +157,14 @@ static int Pselect(int fd, double t, int w)
 {
     struct timeval tm;
     fd_set set;
-    FD_ZERO(&set);
+    FD_ZERO(&set); 
 
     if (t >= 0.0) {
         tm.tv_sec = (int) t;
         tm.tv_usec = (int) ((t - tm.tv_sec)*1000);
     }
 
-    FD_SET(fd, &set);
+    FD_SET(fd, &set); 
     if (w) {
         return select(fd+1, NULL, &set, NULL, t < 0 ? NULL : &tm);
     }
@@ -216,6 +248,239 @@ static int Lrc4(lua_State *L)
 
  return 1;
 }
+
+#ifdef USE_LIBEVENT
+void Pevent_cb(int fd, short ev, void *arg)
+{
+ event_context *p = arg;
+ libevent_context *libevent = p->libevent;
+ lua_State *L = libevent->L;
+ int top = lua_gettop(L);
+
+ if (fd == -1) return;
+
+ lua_rawgeti(L, LUA_REGISTRYINDEX, libevent->event_fd_map); 
+ lua_pushinteger(L, fd);
+ lua_gettable(L, -2);
+ if (lua_isnil(L, -1)) {
+    lua_pop(L,2);
+ }
+ else {
+    if (ev & EV_READ && p->want & EV_READ) {
+        p->want &= ~EV_READ;
+        #if 0
+        lua_pushvalue(L, -1);
+        lua_gettable(L, libevent->rtab); /* want to read table */
+        #endif
+        if (1 || !lua_isnil(L, -1)) { /* interested */
+            libevent->r_cnt++;
+            lua_pushinteger(L, libevent->r_cnt);
+            lua_pushvalue(L, -2);
+            lua_settable(L, libevent->o_rtab);
+            lua_pushvalue(L, -1);
+            lua_pushinteger(L, libevent->r_cnt);
+            lua_settable(L, libevent->o_rtab);
+        }
+        #if 0
+        lua_pop(L,1);
+        #endif
+    }
+    if (ev & EV_WRITE && p->want & EV_WRITE) {
+        p->want &= ~EV_WRITE;
+        #if 0
+        lua_pushvalue(L, -1);
+        lua_gettable(L, libevent->wtab); /* want to write table */
+        #endif
+        if (1 || !lua_isnil(L, -1)) { /* interested */
+            libevent->w_cnt++;
+            lua_pushvalue(L, -1);
+            lua_pushinteger(L, libevent->w_cnt);
+            lua_settable(L, libevent->o_wtab);
+            lua_pushinteger(L, libevent->w_cnt);
+            lua_pushvalue(L, -2);
+            lua_settable(L, libevent->o_wtab);
+        }
+        #if 0
+        lua_pop(L,1);
+        #endif
+    }
+    lua_pop(L, 2); /* event_fd_map on stack and fd->obj value */
+ }
+}
+
+static event_context *Pevent(lua_State *L, int i)
+{
+ if (luaL_checkudata(L,i,MYEVENT)==NULL) luaL_typerror(L,i,MYEVENT);
+ return lua_touserdata(L,i);
+}
+
+static int Levent_select(lua_State *L)
+{
+ double t = luaL_optnumber(L, 3, -1);
+ #if 0
+ int flags = 0;
+ #endif
+ int flags = EVLOOP_ONCE;
+ int i = 0;
+ int itab, rtab, wtab;
+ event_context tout;
+ libevent_context *libevent = &libevent_handle;
+ struct timeval tv, *ptv = NULL;
+
+ if (t >= 0.0) {
+    tv.tv_sec = (int) t;
+    tv.tv_usec = (t - tv.tv_sec)*1000000;
+    #if 1
+    tout.libevent = &libevent_handle;
+    evtimer_set(&tout.ev, Pevent_cb, &tout);
+    evtimer_add(&tout.ev, &tv);
+    #endif
+    flags |= EVLOOP_NONBLOCK;
+    ptv = &tv;
+ }
+
+ lua_settop(L, 3);
+ lua_newtable(L); rtab = lua_gettop(L);
+ lua_newtable(L); wtab = lua_gettop(L);
+
+ libevent->r_cnt = 0;
+ libevent->w_cnt = 0;
+ libevent->rtab = 1;
+ libevent->wtab = 2;
+ libevent->o_rtab = rtab;
+ libevent->o_wtab = wtab;
+ libevent->L = L;
+
+ i=0;
+ while (++i) {
+    int dirty = 0;
+    lua_pushnumber(L,i);
+    lua_gettable(L, 1);
+    if (lua_isnil(L,-1)) {
+        lua_pop(L,1);
+        break;
+    }
+    lua_pushstring(L,"dirty");
+    lua_gettable(L,-2);
+    if (!lua_isnil(L, -1)) {
+        lua_pushvalue(L,-2);
+        lua_call(L, 1, 1);
+        dirty = lua_toboolean(L, -1);
+    }
+    lua_pop(L,1);
+    if (dirty) {
+        lua_pushnumber(L, ++libevent->r_cnt);
+        lua_pushvalue(L,-2);
+        lua_settable(L, libevent->o_rtab);
+        lua_pushnumber(L, libevent->r_cnt);
+        lua_settable(L, libevent->o_rtab);
+    } else {
+        lua_pushstring(L,"event");
+        lua_gettable(L,-2);
+        if (!lua_isnil(L, -1)) {
+            event_context *p = Pevent(L, -1); 
+                #if 0
+                event_set(&p->ev, p->fd, EV_READ , Pevent_cb, p);
+                event_add(&p->ev, ptv);  
+                #endif
+                p->want = EV_READ;
+        }
+        lua_pop(L,2);
+    }
+ }
+
+ i=0;
+ while (++i) {
+    lua_pushnumber(L,i);
+    lua_gettable(L, 2);
+    if (lua_isnil(L,-1)) {
+        lua_pop(L,1);
+        break;
+    }
+    lua_pushstring(L,"event");
+    lua_gettable(L,-2);
+    if (!lua_isnil(L, -1)) {
+        event_context *p = Pevent(L, -1); 
+        #if 0
+        event_set(&p->ev, p->fd, EV_WRITE , Pevent_cb, p);
+        event_add(&p->ev, ptv);  
+        #endif
+        p->want |= EV_WRITE;
+    }
+    lua_pop(L,2);
+ }
+
+ event_base_loop(libevent->base, flags);
+ #if 1
+ if (t >= 0.0) evtimer_del(&tout.ev);
+ #endif
+ return 2;
+}
+
+static void Pevent_close(lua_State *L)
+{
+ event_context *p = Pevent(L,1);
+
+ if (p->open) {
+    event_del(&p->ev);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, p->libevent->event_fd_map); 
+    lua_pushinteger(L, p->ev.ev_fd);
+    lua_pushnil(L);
+    lua_settable(L,-3);
+    lua_pop(L, 1);
+ }
+ p->open = 0;
+
+}
+
+static int Levent_gc(lua_State *L)
+{
+ Pevent_close(L);
+
+ return 0;
+}
+
+static int Levent_close(lua_State *L)
+{
+ Pevent_close(L);
+
+ return 0;
+}
+
+static int Levent(lua_State *L)
+{
+ const int fd = luaL_checkinteger(L, 1);
+ double t = luaL_optnumber(L, 3, -1);
+ event_context *p = lua_newuserdata(L,sizeof(event_context));
+ struct timeval tv;
+
+ if (t >= 0) {
+    tv.tv_sec = (int) t;
+    tv.tv_usec = (t - tv.tv_sec)*1000000;
+ }
+ p->libevent = &libevent_handle;
+ event_set(&p->ev, fd, EV_READ | EV_WRITE | EV_PERSIST, Pevent_cb, p);
+ #if 0
+ event_set(&p->ev, fd, EV_READ | EV_WRITE | EV_PERSIST, Pevent_cb, p);
+ event_set(&p->ev, fd, EV_READ , Pevent_cb, p);
+ event_add(&p->ev, t < 0.0 ? NULL : &tv);
+ #endif
+ p->open = 1;
+ p->fd = fd;
+
+ luaL_getmetatable(L, MYEVENT);
+ lua_setmetatable(L,-2);
+
+ lua_rawgeti(L, LUA_REGISTRYINDEX, p->libevent->event_fd_map); 
+ lua_pushinteger(L, fd);
+ lua_pushvalue(L,2);
+ lua_settable(L,-3);
+ lua_pop(L, 1);
+
+ return 1;
+}
+
+#endif
 
 #ifdef EXPORT_HASH_FUNCTIONS
 static int Lhash(lua_State *L)
@@ -596,6 +861,35 @@ static int Lsessions(lua_State *L)
     return 1;
 }
 
+static int Lprobe(lua_State *L)
+{
+ int fd = luaL_checkinteger(L,1);
+ struct {
+    char buf[1];
+    struct msghdr msg;
+    struct iovec iov;
+ } msg;
+ int ret;
+
+ memset(&msg,0,sizeof(msg));
+
+ msg.iov.iov_base = msg.buf;
+ msg.iov.iov_len = sizeof(msg.buf);
+ msg.msg.msg_iov = &msg.iov;
+ msg.msg.msg_iovlen = 1;
+ ret = sendmsg(fd, &msg.msg, 0);
+
+ if (ret <= 0) {
+    lua_pushnil(L);
+    if (errno == EAGAIN || errno == EWOULDBLOCK) lua_pushstring(L,"timeout");
+    else lua_pushstring(L,"closed");
+    return 2;
+ } else {
+    lua_pushboolean(L, 1);
+    return 1;
+ }
+}
+
 static int Lssl(lua_State *L)
 {
  int ret;
@@ -721,21 +1015,23 @@ static int Lsend(lua_State *L)		/** send(data) */
  const char *data = luaL_checklstring(L, 2, &size);
  int start = luaL_optinteger(L,3,1);
 
+ if (xyssl->closed) {
+    lua_pushnil(L);
+    lua_pushstring(L,"closed");
+    lua_pushnumber(L, 0);
+    return 3;
+ }
+
  if (ssl->out_uoff && (size != xyssl->last_send_size || start-1 != ssl->out_uoff)) {
     luaL_error(L, "xyssl(send): partial send data in buffer(%i, must use data and return index+1 from previous send");
     }
 
- if (xyssl->closed) {
-    lua_pushnil(L);
-    lua_pushstring(L,"nossl");
-    lua_pushnumber(L, 0);
-    return 3;
- }
  if (1) {
     /* always from start of buffer as it is memorized from last 
      * call
      */
-    if (xyssl->timeout <= 0.0 || (err = Pselect(ssl->write_fd, 0, 1)) > 0) {
+    int tries;
+    for (tries = 0; tries == 0 || (tries < 2 &&  ( xyssl->timeout > 0.0 && Pselect(ssl->write_fd, 0, 1) > 0)); tries++) {
         err = ssl_write(ssl, (char *)data, size); 
         if (err) {
             xyssl->last_send_size = size;
@@ -744,15 +1040,17 @@ static int Lsend(lua_State *L)		/** send(data) */
             sent = size;
             xyssl->last_send_size = -1;
             }
-        }
-    else if (err == 0) err = ERR_NET_WOULD_BLOCK;
-    else err = ERR_NET_CONN_RESET;
+        if (sent > 0 || err != ERR_NET_WOULD_BLOCK) break;
+    }
  } else sent = 0;
 
  if (err!=0) {
     lua_pushnil(L);
     if (err == ERR_NET_WOULD_BLOCK ) lua_pushstring(L, "timeout");
-    else if (err == ERR_NET_CONN_RESET) lua_pushstring(L,"closed");
+    else if (err == ERR_NET_CONN_RESET) {
+        lua_pushstring(L,"closed");
+        xyssl->closed = 1;
+    }
     else if (err == ERR_SSL_PEER_CLOSE_NOTIFY) {
         lua_pushstring(L,"nossl");
         xyssl->closed = 1;
@@ -789,12 +1087,12 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
     return 3;
  }
  if (buf) {
-     if (ssl->in_offt || xyssl->timeout <= 0.0 || (ret = Pselect(ssl->read_fd, 0, 0)) > 0) {
+     int tries;
+     for (tries = 0; tries == 0 || (tries < 2 &&  ( xyssl->timeout > 0.0 && Pselect(ssl->read_fd, 0, 0) > 0)); tries++) {
         len = cnt;
         ret = ssl_read(ssl, buf, &len );
-        }
-     else if (ret == 0) ret = ERR_NET_WOULD_BLOCK;
-     else ret = ERR_NET_CONN_RESET;
+        if (len > 0 || ret != ERR_NET_WOULD_BLOCK) break;
+     } 
 
      if (ret==0) {
         luaL_buffinit(L, &B);
@@ -806,7 +1104,10 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
      } else {
         lua_pushnil(L);
         if (ret == ERR_NET_WOULD_BLOCK ) lua_pushstring(L, "timeout");
-        else if (ret == ERR_NET_CONN_RESET) lua_pushstring(L,"closed");
+        else if (ret == ERR_NET_CONN_RESET) {
+            xyssl->closed = 1;
+            lua_pushstring(L,"closed");
+        }
         else if (ret == ERR_SSL_PEER_CLOSE_NOTIFY) {
             lua_pushstring(L,"nossl");
             xyssl->closed = 1;
@@ -959,7 +1260,7 @@ static int Lhandshake(lua_State *L)		/** handshake() */
  int ret;
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
- if (xyssl->timeout <= 0.0 || (ret = Pselect(ssl->write_fd, xyssl->timeout, 1)) > 0) {
+ if (1 || xyssl->timeout <= 0.0 || (ret = Pselect(ssl->write_fd, xyssl->timeout, 1)) > 0) {
      ret = ssl_handshake( ssl );
  } 
  lua_pushnumber(L, ret);
@@ -1044,7 +1345,8 @@ static int Ldirty(lua_State *L)		/** dirty() */
 {
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
- lua_pushboolean(L,ssl->in_offt!=NULL);
+ int dirty = ssl->in_offt != NULL || xyssl->closed;
+ lua_pushboolean(L, dirty);
  return 1;
 }
 
@@ -1147,6 +1449,9 @@ static const luaL_reg Rrc4[] =
 
 static const luaL_reg Rm[] = {
 	{ "ssl",	Lssl	},
+	{ "event",  Levent	},
+	{ "ev_select", Levent_select},
+	{ "probe",	Lprobe	},
 	{ "sessions",	Lsessions},
 	{ "rand",	Lrand	},
 	{ "aes",	Laes	},
@@ -1155,6 +1460,12 @@ static const luaL_reg Rm[] = {
 	{ "hash",	Lhash	},
 #endif
 	{ NULL,		NULL	}
+};
+
+static const luaL_reg Revent[] = {
+	{ "__gc",	Levent_gc	},
+	{ "close",  Levent_close},
+	{ NULL,		NULL	},
 };
 
 LUA_API int luaopen_lxyssl(lua_State *L)
@@ -1191,6 +1502,34 @@ LUA_API int luaopen_lxyssl(lua_State *L)
  lua_pushliteral (L, MYTYPE" you're not allowed to get this metatable");
  lua_settable (L, -3);
  #endif
+
+#ifdef USE_LIBEVENT
+{
+ struct event_base *base;
+
+ luaL_newmetatable(L,MYEVENT);
+ lua_pushliteral(L,"__index");
+ lua_pushvalue(L,-2);
+ lua_settable(L,-3);
+ luaL_openlib(L,NULL,Revent,0);
+
+ base = event_init();
+ if (!base) {
+    luaL_error(L,"luaevent: failed to allocate libevent base");
+ }
+ libevent_handle.base = base;
+
+ lua_newtable(L); /* fdmap */
+ lua_newtable(L); /* fdmap metatable {__mode="kv"} */
+ lua_pushliteral(L,"__mode");
+ lua_pushstring(L,"kv");
+ lua_settable(L,-3);
+ lua_setmetatable(L, -2);
+
+ libevent_handle.event_fd_map = luaL_ref(L, LUA_REGISTRYINDEX);
+ libevent_handle.L = L;
+}
+#endif
 
  luaL_openlib(L,"lxyssl",Rm,0);
  lua_pushliteral(L,"version");			/** version */
