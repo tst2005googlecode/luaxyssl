@@ -2,13 +2,16 @@ require'socket'
 require'lxyssl'
 require'bufferio'
 require 'copas' 
+require'lasync'
 format = string.format
+local libhandle = lasync.handle()
 
 SESSION_LIVE = 2400
 SESSION_ROUNDS = 1000
-MAX_SESSIONS = 1000
+MAX_SESSIONS = 10000
+MAX_SSL = 100
 --copas.WATCH_DOG_TIMEOUT = 600
-copas.SELECT = lxyssl.ev_select
+--copas.SELECT = lxyssl.ev_select
 
 local function proto_index(o, k)  
     --local v = o.__proto[k]
@@ -102,15 +105,14 @@ local dispatch={
     end,
 }
 
-local connections = 0
-local function handler(skt)
-
-    if connections >= MAX_SESSIONS then return nil end
+local function handler(skt,is_ssl)
+    skt:setoption('tcp-nodelay', true)
+    local ip,port = skt:getsockname()
 
     local x = lxyssl.ssl(1) --1 is ssl server nil or 0 is client
-    local ip,port = skt:getsockname()
     --local b = bufferio.wrap(port == 4433 and x or skt, true, port ~= 4433)
-    local b = port == 4433 and bufferio.wrap(x, true) or prototype(skt)
+    local b = is_ssl and bufferio.wrap(x, true) or prototype(skt)
+    local ev = libhandle:event(skt:getfd(), b):open()
 
     if not port then return end
     x:keycert() --setup server cert, would use embedded testing one none is given
@@ -121,11 +123,10 @@ local function handler(skt)
     local function write(...) return copas.send( b,...) end 
     local obj = b
     
-    connections = connections + 1
-    obj.event = lxyssl.event(obj:getfd(), obj)
+    --obj.event = lxyssl.event(obj:getfd(), obj)
     obj.birthday = os.time()
     obj.freq = 1
-    obj.probe = function(skt) return lxyssl.probe(skt:getfd()) end
+    --obj.probe = function(skt) return lxyssl.probe(skt:getfd()) end
     --local client = (port == 4433) and copas.wrap(b) or copas.wrap(skt)
     --local client = copas.wrap(skt)
     local action,err,chunk = read()
@@ -155,41 +156,44 @@ local function handler(skt)
             obj.freq = obj.freq + 1
         else action = nil end
     end
-    connections = connections - 1
-    if connections < 0 then
-        for k,v in ipairs(copas._writing) do
-            if not v.dangling then v.dangling = os.time() 
-            elseif os.difftime(os.time(), v.dangling) > 120 then
-                print(os.time(), "writing", v, os.difftime(os.time(), v.dangling))
-            end
-        end
-        for k,v in ipairs(copas._reading) do
-            if type(v) ~= "userdata" then
-                if not v.dangling then v.dangling = os.time() 
-                elseif os.difftime(os.time(), v.dangling) > 120 then
-                    print(os.time(), "reading", v, os.difftime(os.time(), v.dangling))
-                end
-            end
-        end
-        print(connections, #copas._reading, #copas._writing)
-    end
     --obj:close() 
     x:close()
+    if ev then ev:close() end
 end
 
-local function server(p)
+local e
+local ssl_connections = 0
+local connections = 0
+local function server(p,ssl)
+    local function http_handler(skt)
+        if ssl_connections > MAX_SESSIONS then return end
+        connections = connections + 1 
+        local x =  {handler(skt)}
+        connections = connections - 1 
+        return unpack(x)
+    end
+    local function https_handler(skt)
+        if ssl_connections > MAX_SSL then return end
+        ssl_connections = ssl_connections + 1
+        print("new ssl connection", ssl_connections)
+        local x =  {handler(skt,1)}
+        ssl_connections = ssl_connections - 1
+        return unpack(x)
+    end
+
     local tcp = socket.bind("*",tonumber(p))
-    tcp = prototype(tcp)
-    tcp.event = lxyssl.event(tcp:getfd(), tcp)
-    copas.addserver(tcp, handler)
+    --e = libhandle:event(tcp:getfd(), tcp):open()
+    if ssl then copas.addserver(tcp, https_handler)
+    else copas.addserver(tcp, http_handler) end
 end
 
-server(4433)
+server(4433,1)
 server(8080)
 --server(8080)
+--copas.event_loop()
 while true do
     copas.step(0.1)
-    print(connections)
+    --print(connections)
     --local x = tcp:accept()
     --if x then proxy_handler(x) end
 end

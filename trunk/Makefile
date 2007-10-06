@@ -19,7 +19,8 @@ INCS= -I$(LUAINC)
 MYLIB= $(MYNAME)
 T= $(MYLIB).so
 OBJS= $(MYLIB).o
-LIBS= -lxyssl -levent
+#LIBS= -lxyssl -levent
+LIBS= -lxyssl 
 CC=gcc
 
 all:	so

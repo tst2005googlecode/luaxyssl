@@ -20,25 +20,24 @@ local function prototype(o)
 end
 
 s = prototype(socket.tcp())
-s:connect('www.yahoo.com',80)
-x = lxyssl.event(s:getfd(),s)
-s.event = x
+s:connect('192.168.0.1',80)
+--x = lxyssl.event(s:getfd(),s)
+--s.event = x
 --s.dirty = function(...) print("dirty called"); return true end
 i = 0
-s:send("GET / HTTP/1.1\r\nHost: www.yahoo.com\r\n\r\n")
+s:send("GET / HTTP/1.1\r\nHost: 192.168.0.1\r\n\r\n")
 t1=os.time()
-repeat
+for i=1,1 do
 --a,b=lxyssl.ev_select({s},{s},0.1)
 a,b=socket.select({s},{s},0.1)
-i = i + 1
-until #a > 0
+end
 t2=os.time()
-print(os.difftime(t2,t1))
+
 for k,v in pairs(b) do print("writable",i,k,v,s) end
 for k,v in pairs(a) do print("readable",i,k,v,s) end
-do return 1 end
+--do return 1 end
 
---host='www.google.com'
+host='www.google.com'
 host='www.dreamhost.com'
 --x:connect(t:getfd())
 --b:settimeout(-1)

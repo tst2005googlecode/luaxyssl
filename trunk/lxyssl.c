@@ -13,7 +13,7 @@
 #include <sys/time.h>
 #include <errno.h>
 #include <poll.h>
-#define USE_LIBEVENT
+#define USE_LIBEVENT_NO
 #ifdef USE_LIBEVENT
 #include <event.h>
 #endif
@@ -84,6 +84,7 @@ typedef struct {
  int last_send_size;
  char *peer_cn;
  int closed;
+ int re_open;
  char *dhm_P;
  char *dhm_G;
 } xyssl_context;
@@ -152,6 +153,15 @@ typedef struct {
 #define MYEVENT     "Libevent object"
 
 havege_state hs;
+arc4_context arc4_stream;
+
+static int arc4_rand(void *state)
+{
+    unsigned char temp[1];
+
+    arc4_crypt(state, temp, 1);
+    return temp[0];
+}
 
 static int Pselect(int fd, double t, int w)
 {
@@ -195,7 +205,10 @@ static int Preset(lua_State *L)			/** reset(c) */
  ssl_set_endpoint( ssl, is_server ? SSL_IS_SERVER : SSL_IS_CLIENT );
  ssl_set_authmode( ssl, authmode );
 
+ #if 0
  ssl_set_rng_func( ssl, havege_rand, &hs );
+ #endif
+ ssl_set_rng_func( ssl, arc4_rand, &arc4_stream );
  ssl_set_ciphlist( ssl, my_preferred_ciphers);
  #if 0
  ssl_set_ciphlist( ssl, ssl_default_ciphers );
@@ -213,10 +226,23 @@ static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
 {
  xyssl_context *xyssl=Pget(L,1);
  int read_fd = luaL_checknumber(L,2);
- int write_fd = luaL_optinteger(L,3,read_fd);
+ int re_open = lua_toboolean(L, lua_isnumber(L,3) ? 4 : 3);
+ int write_fd = lua_isnumber(L, 3) ? lua_tointeger(L,3) : read_fd;
+
  ssl_context *ssl=&xyssl->ssl;
 
+ if (re_open) {
+    xyssl->re_open = re_open;
+    if (read_fd != write_fd) {
+        read_fd = dup(read_fd);
+        write_fd = dup(write_fd);
+    } else {
+        write_fd = read_fd = dup(read_fd);
+    }
+ }
+ xyssl->re_open = re_open;
  ssl_set_io_files( ssl, read_fd, write_fd );
+
 }
 
 static int Laes(lua_State *L)
@@ -918,7 +944,10 @@ static int Lssl(lua_State *L)
  ssl_set_endpoint( ssl, is_server ? SSL_IS_SERVER : SSL_IS_CLIENT );
  ssl_set_authmode( ssl, SSL_VERIFY_NONE );
 
+ #if 0
  ssl_set_rng_func( ssl, havege_rand, &hs );
+ #endif
+ ssl_set_rng_func( ssl, arc4_rand, &arc4_stream );
  ssl_set_ciphlist( ssl, my_preferred_ciphers);
  #if 0
  ssl_set_ciphlist( ssl, ssl_default_ciphers );
@@ -963,6 +992,12 @@ static int Pclose(lua_State *L)
 
  ssl_close_notify( ssl );
  xyssl->closed = 1;
+ if (xyssl->re_open) {
+    close(ssl->read_fd);
+    if (ssl->read_fd != ssl->write_fd) {
+        close(ssl->write_fd);
+    }
+ }
 
  return 0;
 }
@@ -1449,8 +1484,10 @@ static const luaL_reg Rrc4[] =
 
 static const luaL_reg Rm[] = {
 	{ "ssl",	Lssl	},
+#ifdef USE_LIBEVENT
 	{ "event",  Levent	},
 	{ "ev_select", Levent_select},
+#endif
 	{ "probe",	Lprobe	},
 	{ "sessions",	Lsessions},
 	{ "rand",	Lrand	},
@@ -1462,15 +1499,26 @@ static const luaL_reg Rm[] = {
 	{ NULL,		NULL	}
 };
 
+#ifdef USE_LIBEVENT
 static const luaL_reg Revent[] = {
 	{ "__gc",	Levent_gc	},
 	{ "close",  Levent_close},
 	{ NULL,		NULL	},
 };
+#endif
 
 LUA_API int luaopen_lxyssl(lua_State *L)
 {
+ unsigned char random_bits[256];
+ int i;
+
  havege_init( &hs );
+
+ for (i=0; i < sizeof(random_bits); i++) random_bits[i] = havege_rand(&hs);
+ arc4_setup(&arc4_stream, random_bits, sizeof(random_bits));
+
+ for (i=0; i < 4; i++) 
+    arc4_crypt(&arc4_stream, random_bits, sizeof(random_bits));
 
  luaL_newmetatable(L,MYTYPE);
  lua_pushliteral(L,"__index");
