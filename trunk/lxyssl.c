@@ -8,13 +8,18 @@
 #include <stdio.h>
 #include <memory.h>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#else
+#include <time.h>
+#include <winsock.h>
+#endif
 #include <errno.h>
-#include <poll.h>
 #define USE_LIBEVENT_NO
 #ifdef USE_LIBEVENT
+#include <poll.h>
 #include <event.h>
 #endif
 #define LUA_LIB
@@ -231,6 +236,7 @@ static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
 
  ssl_context *ssl=&xyssl->ssl;
 
+ #ifndef _WIN32
  if (re_open) {
     xyssl->re_open = re_open;
     if (read_fd != write_fd) {
@@ -241,7 +247,9 @@ static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
     }
  }
  xyssl->re_open = re_open;
+ #endif
  ssl_set_io_files( ssl, read_fd, write_fd );
+ return 0;
 
 }
 
@@ -889,6 +897,7 @@ static int Lsessions(lua_State *L)
 
 static int Lprobe(lua_State *L)
 {
+ #ifndef _WIN32
  int fd = luaL_checkinteger(L,1);
  struct {
     char buf[1];
@@ -914,6 +923,10 @@ static int Lprobe(lua_State *L)
     lua_pushboolean(L, 1);
     return 1;
  }
+ #else
+    lua_pushboolean(L, 1);
+    return 1;
+ #endif
 }
 
 static int Lssl(lua_State *L)
@@ -992,13 +1005,14 @@ static int Pclose(lua_State *L)
 
  ssl_close_notify( ssl );
  xyssl->closed = 1;
+ #ifndef _WIN32
  if (xyssl->re_open) {
     close(ssl->read_fd);
     if (ssl->read_fd != ssl->write_fd) {
         close(ssl->write_fd);
     }
  }
-
+ #endif
  return 0;
 }
 
