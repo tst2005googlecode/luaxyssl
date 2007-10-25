@@ -38,13 +38,13 @@ for k,v in pairs(a) do print("readable",i,k,v,s) end
 --do return 1 end
 
 host='www.google.com'
-host='www.dreamhost.com'
+--host='www.dreamhost.com'
 --x:connect(t:getfd())
 --b:settimeout(-1)
 msg = string.format('GET / HTTP/1.1\r\nHost: %s\r\n\r\n', host)
+for i =1,10 do
 x=lxyssl.ssl()
 b=bufferio.wrap(x,true)
-for i =1,10 do
 t=socket.tcp()
 t:connect(host,443)
 b:connect(t:getfd())
@@ -58,6 +58,8 @@ repeat
     o,err,c = b:send(msg,c)
     --o,err,c = x:send('GET / HTTP/1.1\r\nhost: www.yahoo.com\r\n\r\n')
 until o==#msg or err ~= "timeout"
+
+print(b:peer(), b:name(), b:cipher())
 
 repeat
     d,err,i = b:receive()
