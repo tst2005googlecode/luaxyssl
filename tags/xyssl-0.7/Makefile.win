@@ -1,0 +1,39 @@
+# makefile for xyssl library for Lua
+
+# change these to reflect your Lua installation
+LUA= c:/lua5.1
+LUA_INC= $(LUA)/include
+LUA_LIB= $(LUA)/lua5.1.lib
+XYSSL_VERSION=0.7
+XYSSL_INC=z:/xyssl-$(XYSSL_VERSION)/include
+XYSSL_LIB=z:/xyssl-$(XYSSL_VERSION)/visualc/xyssl.lib
+XYSSL_FEATURES	= -DHAVE_LONGLONG -DHAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 -DNO_DES
+MYNAME= lxyssl
+
+# no need to change anything below here
+MYLIB= $(MYNAME)
+T= $(MYLIB).dll
+OBJS= $(MYLIB).obj
+
+CC= cl.exe
+LINK= link.exe
+
+#CFLAGS=/nologo /MD /O2 /W3 /I "$(LUA_INC)" /I "$(XYSSL_INC)" /D "_CRT_SECURE_NO_DEPRECATE" /LD /D "NDEBUG" /D "_MBCS" /D "LUA_BUILD_AS_DLL" /FD 
+CFLAGS=/nologo /MT /O2 /W3 /I "$(LUA_INC)" /I "$(XYSSL_INC)" /D "_CRT_SECURE_NO_DEPRECATE" /LD /D "NDEBUG" /D "_MBCS" /D "LUA_BUILD_AS_DLL" /FD 
+
+LINK_FLAGS= $(LUA_LIB) $(XYSSL_LIB) kernel32.lib Advapi32.lib /nologo /subsystem:windows /dll /incremental:no /machine:I386 /out:$T /implib:$(MYLIB).lib
+
+dll:	$T
+
+.c.obj:
+	$(CC) /c /Fo$@ $(CFLAGS) $<
+
+"$(OUTDIR)\$(T).dll" : "$(OUTDIR)" $(DEF_FILE) $(LINK_OBJS)
+	mt -nologo -outputresource:"$@;2" -manifest "$@.manifest"
+
+$T:	$(OBJS) 
+	$(LINK) $(LINK_FLAGS) $(OBJS) $(LUA_LIB) $(XYSSL_LIB)
+	mt -nologo -outputresource:"$@;2" -manifest "$@.manifest"
+
+clean:
+	del *.obj *.manifest *.lib *.dll
