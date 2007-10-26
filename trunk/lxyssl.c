@@ -55,6 +55,26 @@ char *default_dhm_P =
 
 char *default_dhm_G = "4";
 
+#ifndef SSL3_RSA_RC4_128_MD5
+#define SSL3_RSA_RC4_128_MD5 SSL_RSA_RC4_128_MD5
+#define SSL3_RSA_RC4_128_SHA SSL_RSA_RC4_128_SHA
+#define TLS1_EDH_RSA_AES_256_SHA SSL_EDH_RSA_AES_256_SHA
+#define TLS1_RSA_AES_256_SHA SSL_RSA_AES_256_SHA
+#define ERR_NET_WOULD_BLOCK XYSSL_ERR_NET_TRY_AGAIN
+#define ERR_NET_CONN_RESET XYSSL_ERR_NET_CONN_RESET
+#define ERR_SSL_PEER_CLOSE_NOTIFY XYSSL_ERR_SSL_PEER_CLOSE_NOTIFY
+#define XYSSL_POST_07
+#define ssl_set_rng_func ssl_set_rng
+#define ssl_set_ciphlist ssl_set_ciphers
+#define aes_decrypt(c,i,o) aes_crypt_ecb(c, AES_DECRYPT, i , o)
+#define aes_encrypt(c,i,o) aes_crypt_ecb(c, AES_ENCRYPT, i , o)
+#define aes_cbc_encrypt(c, iv, i, o, l) aes_crypt_cbc(c, AES_ENCRYPT, l, iv, i, o)
+#define aes_cbc_decrypt(c, iv, i, o, l) aes_crypt_cbc(c, AES_DECRYPT, l, iv, i, o)
+#define x509_add_certs x509parse_crt
+#define x509_parse_key x509parse_key
+#define ssl_set_rsa_cert ssl_set_own_cert
+#define x509_free_cert x509_free
+#endif
 /*
  * sorted by order of preference
  */
@@ -90,9 +110,19 @@ typedef struct {
  char *peer_cn;
  int closed;
  int re_open;
+ int read_fd;
+ int write_fd;
  char *dhm_P;
  char *dhm_G;
+ #ifdef XYSSL_POST_07
+ ssl_session ssn;
+ #endif
 } xyssl_context;
+
+typedef struct {
+  aes_context enc;
+  aes_context dec;
+} dual_aes_context;
 
 #ifdef USE_LIBEVENT
 typedef struct {
@@ -120,6 +150,12 @@ libevent_context libevent_handle;
 
 /* sharing session info across ssl context in server mode */
 
+int session_table_idx = -1;
+lua_State *Current_LVM = NULL;
+
+#ifndef SSL_SESSION_TBL_LEN
+#define SSL_SESSION_TBL_LEN 256
+#endif
 unsigned char default_session_table[SSL_SESSION_TBL_LEN];
 unsigned char *session_table = default_session_table;
 int malloc_sidtable = 0;
@@ -159,6 +195,58 @@ typedef struct {
 
 havege_state hs;
 arc4_context arc4_stream;
+
+#ifdef XYSSL_POST_07
+static int my_get_session(ssl_context *ssl)
+{
+    lua_State *L = Current_LVM;
+    int ret;
+    if (L == NULL) return 1;
+    lua_pushstring(L, "get_session");
+    lua_gettable(L, 1);
+    if (lua_isnil(L, -1)) {
+	lua_pop(L,1);
+	return 1;
+	}
+    lua_pushvalue(L, 1);
+    lua_pushlstring(L, ssl->session->id, ssl->session->length);
+    lua_pushnumber(L, ssl->session->start);
+    lua_pushnumber(L, ssl->session->cipher);
+    ret = lua_pcall(L, 4, 1, 0);
+    if (ret) {
+        lua_pop(L,1);
+        return 1;
+    }
+    if (lua_isstring(L, -1)) {
+        int len;
+        const char *master = luaL_checklstring(L, -1, &len);
+        memcpy(ssl->session->master, master, len < sizeof(ssl->session->master) ? len : sizeof(ssl->session->master));
+    }
+    lua_pop(L, 1);
+    return 0;
+}
+
+static int my_set_session(ssl_context *ssl)
+{
+    lua_State *L = Current_LVM;
+    int ret;
+    if (L == NULL) return 0;
+    lua_pushstring(L, "set_session");
+    lua_gettable(L, 1);
+    if (lua_isnil(L, -1)) {
+        lua_pop(L,1);
+        return 0;
+    }
+    lua_pushvalue(L, 1);
+    lua_pushlstring(L, ssl->session->id, ssl->session->length);
+    lua_pushnumber(L, ssl->session->start);
+    lua_pushnumber(L, ssl->session->cipher);
+    lua_pushlstring(L, ssl->session->master, sizeof(ssl->session->master));
+    ret = lua_pcall(L, 5, 1, 0);
+    lua_pop(L,1);
+    return 0;
+}
+#endif
 
 static int arc4_rand(void *state)
 {
@@ -206,10 +294,16 @@ static int Preset(lua_State *L)			/** reset(c) */
  #if 0
  #endif
  ssl_free(ssl);
+ #ifdef XYSSL_POST_07
+ ret = ssl_init(ssl);
+ #else
  ret = ssl_init(ssl, is_server ? 0 : 1);
+ #endif
  ssl_set_endpoint( ssl, is_server ? SSL_IS_SERVER : SSL_IS_CLIENT );
  ssl_set_authmode( ssl, authmode );
-
+ #ifdef XYSSL_POST_07
+ ssl_set_session( ssl, 1, is_server ? 0 : 600, &xyssl->ssn);
+ #endif
  #if 0
  ssl_set_rng_func( ssl, havege_rand, &hs );
  #endif
@@ -220,8 +314,13 @@ static int Preset(lua_State *L)			/** reset(c) */
  #endif
 
  if (is_server) {
+ #ifndef XYSSL_POST_07
     ssl_set_sidtable( ssl, session_table );
     ssl_set_dhm_vals( ssl, xyssl->dhm_P ? xyssl->dhm_P : default_dhm_P, xyssl->dhm_G ? xyssl->dhm_G : default_dhm_G);
+ #else
+    ssl_set_scb(ssl, my_get_session, my_set_session);
+    ssl_set_dh_param( ssl, xyssl->dhm_P ? xyssl->dhm_P : default_dhm_P, xyssl->dhm_G ? xyssl->dhm_G : default_dhm_G);
+ #endif
  }
  return ret;
 }
@@ -248,7 +347,13 @@ static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
  }
  xyssl->re_open = re_open;
  #endif
+ xyssl->read_fd = read_fd;
+ xyssl->write_fd = write_fd;
+ #ifndef XYSSL_POST_07
  ssl_set_io_files( ssl, read_fd, write_fd );
+ #else
+ ssl_set_bio(ssl, net_recv, &xyssl->read_fd, net_send, &xyssl->write_fd);
+ #endif
  return 0;
 
 }
@@ -258,7 +363,7 @@ static int Laes(lua_State *L)
  int klen;
  const unsigned char *key = luaL_checklstring(L, 1, &klen);
  int bits = luaL_optinteger(L, 2, 128);
- aes_context *aes = lua_newuserdata(L,sizeof(aes_context));
+ dual_aes_context *aes = lua_newuserdata(L,sizeof(dual_aes_context));
 
  if (klen*8 != bits) {
     lua_pop(L, 1);
@@ -266,7 +371,13 @@ static int Laes(lua_State *L)
  }
  luaL_getmetatable(L,MYAES);
  lua_setmetatable(L,-2);
- aes_set_key(aes, (unsigned char *)key, bits);
+ #ifndef XYSSL_POST_07
+ aes_set_key(&aes->enc, (unsigned char *)key, bits);
+ aes_set_key(&aes->dec, (unsigned char *)key, bits);
+ #else
+ aes_setkey_enc(&aes->enc, (unsigned char *)key, bits);
+ aes_setkey_dec(&aes->dec, (unsigned char *)key, bits);
+ #endif
 
  return 1;
 }
@@ -594,7 +705,7 @@ static hash_context *Pget_hash(lua_State *L, int i)
  return lua_touserdata(L,i);
 }
 
-static aes_context *Pget_aes(lua_State *L, int i)
+static dual_aes_context *Pget_aes(lua_State *L, int i)
 {
  if (luaL_checkudata(L,i,MYAES)==NULL) luaL_typerror(L,i,MYAES);
  return lua_touserdata(L,i);
@@ -634,7 +745,7 @@ static int Lhash_reset(lua_State *L)
 
 static int Laes_encrypt(lua_State *L)
 {
- aes_context *obj=Pget_aes(L,1);
+ dual_aes_context *obj=Pget_aes(L,1);
  int len;
  const char *data = luaL_checklstring(L, 2, &len);
  int i;
@@ -645,7 +756,7 @@ static int Laes_encrypt(lua_State *L)
  for(i = 0; i < len; i+=16) {
     unsigned char temp[16];
 
-    aes_encrypt(obj, (unsigned char *)&data[i], temp);
+    aes_encrypt(&obj->enc, (unsigned char *)&data[i], temp);
     luaL_addlstring(&B, temp, 16);
  }
  luaL_pushresult(&B);
@@ -655,7 +766,7 @@ static int Laes_encrypt(lua_State *L)
 
 static int Laes_decrypt(lua_State *L)
 {
- aes_context *obj=Pget_aes(L,1);
+ dual_aes_context *obj=Pget_aes(L,1);
  int len;
  const char *data = luaL_checklstring(L, 2, &len);
  int i;
@@ -666,7 +777,7 @@ static int Laes_decrypt(lua_State *L)
  for(i = 0; i < len; i+=16) {
     unsigned char temp[16];
 
-    aes_decrypt(obj, (unsigned char *)&data[i], temp);
+    aes_decrypt(&obj->dec, (unsigned char *)&data[i], temp);
     luaL_addlstring(&B, temp, 16);
  }
  luaL_pushresult(&B);
@@ -703,7 +814,7 @@ static int Lrc4_crypt(lua_State *L)
 
 static int Laes_cbc_encrypt(lua_State *L)
 {
- aes_context *obj=Pget_aes(L,1);
+ dual_aes_context *obj=Pget_aes(L,1);
  int len;
  const char *data = luaL_checklstring(L, 2, &len);
  int iv_len;
@@ -720,11 +831,11 @@ static int Laes_cbc_encrypt(lua_State *L)
  luaL_buffinit(L, &B);
  memcpy(iv, IV, 16);
  for(i = 0; i < len - t_size; i+=sizeof(temp)) {
-    aes_cbc_encrypt(obj, iv, (unsigned char *)&data[i], temp, sizeof(temp));
+    aes_cbc_encrypt(&obj->enc, iv, (unsigned char *)&data[i], temp, sizeof(temp));
     luaL_addlstring(&B, temp, sizeof(temp));
  }
  if (i < len) {
-    aes_cbc_encrypt(obj, iv, (unsigned char *)&data[i], temp, len - i);
+    aes_cbc_encrypt(&obj->enc, iv, (unsigned char *)&data[i], temp, len - i);
     luaL_addlstring(&B, temp, len - i);
  }
  luaL_pushresult(&B);
@@ -735,7 +846,7 @@ static int Laes_cbc_encrypt(lua_State *L)
 
 static int Laes_cbc_decrypt(lua_State *L)
 {
- aes_context *obj=Pget_aes(L,1);
+ dual_aes_context *obj=Pget_aes(L,1);
  int len;
  const char *data = luaL_checklstring(L, 2, &len);
  int iv_len;
@@ -752,11 +863,11 @@ static int Laes_cbc_decrypt(lua_State *L)
  luaL_buffinit(L, &B);
  memcpy(iv, IV, 16);
  for(i = 0; i < len - t_size; i+=sizeof(temp)) {
-    aes_cbc_decrypt(obj, iv, (unsigned char *)&data[i], temp, sizeof(temp));
+    aes_cbc_decrypt(&obj->dec, iv, (unsigned char *)&data[i], temp, sizeof(temp));
     luaL_addlstring(&B, temp, sizeof(temp));
  }
  if (i < len) {
-    aes_cbc_decrypt(obj, iv, (unsigned char *)&data[i], temp, len - i);
+    aes_cbc_decrypt(&obj->dec, iv, (unsigned char *)&data[i], temp, len - i);
     luaL_addlstring(&B, temp, len - i);
  }
  luaL_pushresult(&B);
@@ -767,7 +878,7 @@ static int Laes_cbc_decrypt(lua_State *L)
 
 static int Laes_cfb_encrypt(lua_State *L)
 {
- aes_context *obj=Pget_aes(L,1);
+ dual_aes_context *obj=Pget_aes(L,1);
  int len;
  const char *data = luaL_checklstring(L, 2, &len);
  int iv_len;
@@ -784,7 +895,7 @@ static int Laes_cfb_encrypt(lua_State *L)
  luaL_buffinit(L, &B);
  memcpy(iv, IV, 16);
  for(i = 0, o = temp; i < len; i++) {
-    if (!start) aes_encrypt(obj, iv, iv);
+    if (!start) aes_encrypt(&obj->enc, iv, iv);
     iv[start] = *o++ = data[i]^iv[start];
     start = (start + 1)%16;
     if (i%256==255) {
@@ -804,7 +915,7 @@ static int Laes_cfb_encrypt(lua_State *L)
 
 static int Laes_cfb_decrypt(lua_State *L)
 {
- aes_context *obj=Pget_aes(L,1);
+ dual_aes_context *obj=Pget_aes(L,1);
  int len;
  const char *data = luaL_checklstring(L, 2, &len);
  int iv_len;
@@ -822,7 +933,7 @@ static int Laes_cfb_decrypt(lua_State *L)
  memcpy(iv, IV, 16);
  for(i = 0, o = temp; i < len; i++) {
     unsigned char c;
-    if (!start) aes_encrypt(obj, iv, iv);
+    if (!start) aes_encrypt(&obj->enc, iv, iv);
     c = data[i];
     *o++ = c^iv[start];
     iv[start] = c;
@@ -946,7 +1057,14 @@ static int Lssl(lua_State *L)
  luaL_getmetatable(L,MYTYPE);
  lua_setmetatable(L,-2);
 
+ #ifdef XYSSL_POST_07
+ ret = ssl_init(ssl);
+ #if 0
+ ssl_set_debuglvl(ssl, 3);
+ #endif
+ #else
  ret = ssl_init(ssl,is_server ? 0 : 1);
+ #endif
  if (ret!= 0) {
     lua_pop(L, 1);
     lua_pushnil(L);
@@ -956,19 +1074,26 @@ static int Lssl(lua_State *L)
 
  ssl_set_endpoint( ssl, is_server ? SSL_IS_SERVER : SSL_IS_CLIENT );
  ssl_set_authmode( ssl, SSL_VERIFY_NONE );
+ #ifdef XYSSL_POST_07
+ ssl_set_session( ssl, 1, is_server ? 0: 600, &xyssl->ssn);
+ #else
+ #endif
 
  #if 0
  ssl_set_rng_func( ssl, havege_rand, &hs );
  #endif
  ssl_set_rng_func( ssl, arc4_rand, &arc4_stream );
- ssl_set_ciphlist( ssl, my_preferred_ciphers);
  #if 0
- ssl_set_ciphlist( ssl, ssl_default_ciphers );
+ ssl_set_ciphlist( ssl, my_preferred_ciphers);
  #endif
+ ssl_set_ciphlist( ssl, ssl_default_ciphers );
 
  if (is_server) {
+ #ifndef XYSSL_POST_07
     ssl_set_sidtable( ssl, session_table );
     ssl_set_dhm_vals( ssl, dhm_P, dhm_G );
+ #else
+ #endif
     xyssl->dhm_P = malloc(strlen(dhm_P)+1);
     xyssl->dhm_G = malloc(strlen(dhm_G)+1);
     if (xyssl->dhm_P) strcpy(xyssl->dhm_P, dhm_P);
@@ -1007,9 +1132,9 @@ static int Pclose(lua_State *L)
  xyssl->closed = 1;
  #ifndef _WIN32
  if (xyssl->re_open) {
-    close(ssl->read_fd);
-    if (ssl->read_fd != ssl->write_fd) {
-        close(ssl->write_fd);
+    close(xyssl->read_fd);
+    if (xyssl->read_fd != xyssl->write_fd) {
+        close(xyssl->write_fd);
     }
  }
  #endif
@@ -1028,7 +1153,9 @@ static int Lsessinfo(lua_State *L)			/** sessinfo(c) */
  char *sessid = (char *)luaL_optlstring(L, 2, NULL, &id_len);
  int master_len;
  char *master = (char *)luaL_optlstring(L, 3, NULL, &master_len);
+ int cipher = luaL_optnumber(L,4,0);
  
+ #ifndef XYSSL_POST_07
  ssl_context *ssl=&xyssl->ssl;
  lua_pushlstring(L,ssl->sessid, ssl->sidlen);
  lua_pushlstring(L,ssl->master, sizeof(ssl->master));
@@ -1038,6 +1165,18 @@ static int Lsessinfo(lua_State *L)			/** sessinfo(c) */
     memcpy(ssl->master, master, master_len < sizeof(ssl->master) ? master_len : sizeof(ssl->master));
  }
  return 2;
+ #else
+ lua_pushlstring(L,xyssl->ssn.id, xyssl->ssn.length);
+ lua_pushlstring(L,xyssl->ssn.master, sizeof(xyssl->ssn.master));
+ lua_pushnumber(L, xyssl->ssn.cipher);
+ if (sessid && master && cipher > 0) {
+    xyssl->ssn.cipher = cipher;
+    xyssl->ssn.length = id_len < sizeof(xyssl->ssn.id) ? id_len : sizeof(xyssl->ssn.id);
+    memcpy(xyssl->ssn.id, sessid, xyssl->ssn.length);
+    memcpy(xyssl->ssn.master, master, master_len < sizeof(xyssl->ssn.master) ? master_len : sizeof(xyssl->ssn.master));
+ }
+ return 3;
+ #endif
 }
 
 static int Lreset(lua_State *L)			/** reset(c) */
@@ -1063,6 +1202,8 @@ static int Lsend(lua_State *L)		/** send(data) */
  int pending = ssl->out_left;
  const char *data = luaL_checklstring(L, 2, &size);
  int start = luaL_optinteger(L,3,1);
+ 
+ Current_LVM = L;
 
  if (xyssl->closed) {
     lua_pushnil(L);
@@ -1070,18 +1211,24 @@ static int Lsend(lua_State *L)		/** send(data) */
     lua_pushnumber(L, 0);
     return 3;
  }
+ if (start < 1) start = 1;
 
+ #ifndef XYSSL_POST_07
  if (ssl->out_uoff && (size != xyssl->last_send_size || start-1 != ssl->out_uoff)) {
     luaL_error(L, "xyssl(send): partial send data in buffer(%i, must use data and return index+1 from previous send");
     }
+ #else
+ size = size - start + 1;
+ #endif
 
  if (1) {
     /* always from start of buffer as it is memorized from last 
      * call
      */
     int tries;
-    for (tries = 0; tries == 0 || (tries < 2 &&  ( xyssl->timeout > 0.0 && Pselect(ssl->write_fd, 0, 1) > 0)); tries++) {
-        err = ssl_write(ssl, (char *)data, size); 
+    for (tries = 0; tries == 0 || (tries < 2 &&  ( xyssl->timeout > 0.0 && Pselect(xyssl->write_fd, 0, 1) > 0)); tries++) {
+        err = ssl_write(ssl, (char *)data + start - 1, size); 
+	#ifndef XYSSL_POST_07
         if (err) {
             xyssl->last_send_size = size;
             sent = ssl->out_uoff ? ssl->out_uoff : 0;
@@ -1089,11 +1236,18 @@ static int Lsend(lua_State *L)		/** send(data) */
             sent = size;
             xyssl->last_send_size = -1;
             }
+	#else
+	if (err > 0) {
+	    xyssl->last_send_size = size;
+	    sent = err;
+	    err = 0;
+	}
+	#endif
         if (sent > 0 || err != ERR_NET_WOULD_BLOCK) break;
     }
  } else sent = 0;
 
- if (err!=0) {
+ if (err!=0 || sent < size) {
     lua_pushnil(L);
     if (err == ERR_NET_WOULD_BLOCK ) lua_pushstring(L, "timeout");
     else if (err == ERR_NET_CONN_RESET) {
@@ -1105,7 +1259,11 @@ static int Lsend(lua_State *L)		/** send(data) */
         xyssl->closed = 1;
         }
     else lua_pushstring(L, "handshake");
+    #ifndef XYSSL_POST_07
     lua_pushnumber(L, start > sent ? start-1 : sent);
+    #else
+    lua_pushnumber(L, start + sent - 1);
+    #endif
  } else {
     lua_pushnumber(L, sent);
     lua_pushnil(L);
@@ -1128,6 +1286,8 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
  char   *buf = malloc(cnt);
  luaL_Buffer B;
 
+ Current_LVM = L;
+
  if (xyssl->closed) {
     if (buf) free(buf);
     lua_pushnil(L);
@@ -1137,10 +1297,16 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
  }
  if (buf) {
      int tries;
-     for (tries = 0; tries == 0 || (tries < 2 &&  ( xyssl->timeout > 0.0 && Pselect(ssl->read_fd, 0, 0) > 0)); tries++) {
+     for (tries = 0; tries == 0 || (tries < 2 &&  ( xyssl->timeout > 0.0 && Pselect(xyssl->read_fd, 0, 0) > 0)); tries++) {
         len = cnt;
+	#ifndef XYSSL_POST_07
         ret = ssl_read(ssl, buf, &len );
         if (len > 0 || ret != ERR_NET_WOULD_BLOCK) break;
+	#else
+        ret = ssl_read(ssl, buf, len );
+	if (ret > 0) {len = ret; ret = 0; break; }
+        else if (ret != ERR_NET_WOULD_BLOCK) break;
+	#endif
      } 
 
      if (ret==0) {
@@ -1165,7 +1331,9 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
         
         luaL_buffinit(L, &B);
         if (part_cnt) luaL_addlstring(&B, part, part_cnt);
+	#ifndef XYSSL_POST_07
         if (len) luaL_addlstring(&B, buf, len);
+	#endif
         luaL_pushresult(&B);
     }
     free(buf);
@@ -1271,8 +1439,8 @@ static int Lgetfd(lua_State *L)		/** getfd */
 {
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
- lua_pushnumber(L, ssl->read_fd);
- lua_pushnumber(L, ssl->write_fd);
+ lua_pushnumber(L, xyssl->read_fd);
+ lua_pushnumber(L, xyssl->write_fd);
  return 2;
 }
 
@@ -1309,7 +1477,10 @@ static int Lhandshake(lua_State *L)		/** handshake() */
  int ret;
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
- if (1 || xyssl->timeout <= 0.0 || (ret = Pselect(ssl->write_fd, xyssl->timeout, 1)) > 0) {
+
+ Current_LVM = L;
+
+ if (1 || xyssl->timeout <= 0.0 || (ret = Pselect(xyssl->write_fd, xyssl->timeout, 1)) > 0) {
      ret = ssl_handshake( ssl );
  } 
  lua_pushnumber(L, ret);
@@ -1333,7 +1504,11 @@ static int Lpeer(lua_State *L)		/** peer() */
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
  if (ssl->peer_cert) {
+     #ifndef XYSSL_POST_07
      char *info = x509_cert_info ( ssl->peer_cert );
+     #else
+     char *info = x509parse_cert_info ( "",ssl->peer_cert );
+     #endif
 
      if (info) {
         lua_pushstring(L,info);
@@ -1348,7 +1523,11 @@ static int Lcipher_info(lua_State *L)		/** cipher_info() */
 {
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
+ #ifndef XYSSL_POST_07
  char *cipher_choosen = ssl_get_cipher_name(ssl);
+ #else
+ char *cipher_choosen = NULL;
+ #endif
  if (cipher_choosen) {
     lua_pushstring(L,cipher_choosen);
  } else lua_pushnil(L);
@@ -1361,7 +1540,11 @@ static int Lname(lua_State *L)		/** name() */
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
  if (ssl->own_cert) {
+     #ifndef XYSSL_POST_07
      char *info = x509_cert_info ( ssl->own_cert );
+     #else
+     char *info = x509parse_cert_info ( "",ssl->own_cert );
+     #endif
 
      if (info) {
         lua_pushstring(L,info);
@@ -1381,11 +1564,11 @@ static int Lsettimeout(lua_State *L) /** settimeout(sec) **/
  lua_pushnumber(L,xyssl->timeout);
  xyssl->timeout = t;
  if (t < 0.0) {
-     net_set_block(ssl->read_fd);
-     net_set_block(ssl->write_fd);
+     net_set_block(xyssl->read_fd);
+     net_set_block(xyssl->write_fd);
  } else {
-     net_set_nonblock(ssl->read_fd);
-     net_set_nonblock(ssl->write_fd);
+     net_set_nonblock(xyssl->read_fd);
+     net_set_nonblock(xyssl->write_fd);
  }
  return 1;
 }
@@ -1538,6 +1721,11 @@ LUA_API int luaopen_lxyssl(lua_State *L)
  lua_pushliteral(L,"__index");
  lua_pushvalue(L,-2);
  lua_settable(L,-3);
+ #ifndef XYSSL_POST_07
+ lua_pushliteral(L,"buffered_write");
+ lua_pushnumber(L,1);
+ lua_settable(L,-3);
+ #endif
  luaL_openlib(L,NULL,R,0);
 
 #ifdef EXPORT_HASH_FUNCTIONS
@@ -1592,6 +1780,14 @@ LUA_API int luaopen_lxyssl(lua_State *L)
  libevent_handle.L = L;
 }
 #endif
+
+ lua_newtable(L); /* sessions */
+ lua_newtable(L); /* sessions metatable {__mode="kv"} */
+ lua_pushliteral(L,"__mode");
+ lua_pushstring(L,"kv");
+ lua_settable(L,-3);
+ lua_setmetatable(L, -2);
+ session_table_idx = luaL_ref(L, LUA_REGISTRYINDEX);
 
  luaL_openlib(L,"lxyssl",Rm,0);
  lua_pushliteral(L,"version");			/** version */

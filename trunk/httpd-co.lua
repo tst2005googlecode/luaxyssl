@@ -2,16 +2,13 @@ require'socket'
 require'lxyssl'
 require'bufferio'
 require 'copas' 
-require'lasync'
 format = string.format
-local libhandle = lasync.handle()
 
 SESSION_LIVE = 2400
 SESSION_ROUNDS = 1000
 MAX_SESSIONS = 10000
 MAX_SSL = 100
 --copas.WATCH_DOG_TIMEOUT = 600
---copas.SELECT = lxyssl.ev_select
 
 local function proto_index(o, k)  
     --local v = o.__proto[k]
@@ -111,8 +108,7 @@ local function handler(skt,is_ssl)
 
     local x = lxyssl.ssl(1) --1 is ssl server nil or 0 is client
     --local b = bufferio.wrap(port == 4433 and x or skt, true, port ~= 4433)
-    local b = is_ssl and bufferio.wrap(x, true) or prototype(skt)
-    local ev = libhandle:event(skt:getfd(), b):open()
+    local b = is_ssl and bufferio.wrap(x) or prototype(skt)
 
     if not port then return end
     x:keycert() --setup server cert, would use embedded testing one none is given
@@ -123,7 +119,6 @@ local function handler(skt,is_ssl)
     local function write(...) return copas.send( b,...) end 
     local obj = b
     
-    --obj.event = lxyssl.event(obj:getfd(), obj)
     obj.birthday = os.time()
     obj.freq = 1
     --obj.probe = function(skt) return lxyssl.probe(skt:getfd()) end
@@ -158,7 +153,6 @@ local function handler(skt,is_ssl)
     end
     --obj:close() 
     x:close()
-    if ev then ev:close() end
 end
 
 local e
@@ -182,15 +176,12 @@ local function server(p,ssl)
     end
 
     local tcp = socket.bind("*",tonumber(p))
-    --e = libhandle:event(tcp:getfd(), tcp):open()
     if ssl then copas.addserver(tcp, https_handler)
     else copas.addserver(tcp, http_handler) end
 end
 
 server(4433,1)
 server(8080)
---server(8080)
---copas.event_loop()
 while true do
     copas.step(0.1)
     --print(connections)

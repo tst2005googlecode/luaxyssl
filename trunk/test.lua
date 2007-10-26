@@ -19,43 +19,26 @@ local function prototype(o)
     return setmetatable({__proto=o}, {__index = proto_index })
 end
 
-s = prototype(socket.tcp())
-s:connect('192.168.0.1',80)
---x = lxyssl.event(s:getfd(),s)
---s.event = x
---s.dirty = function(...) print("dirty called"); return true end
-i = 0
-s:send("GET / HTTP/1.1\r\nHost: 192.168.0.1\r\n\r\n")
-t1=os.time()
-for i=1,1 do
---a,b=lxyssl.ev_select({s},{s},0.1)
-a,b=socket.select({s},{s},0.1)
-end
-t2=os.time()
-
-for k,v in pairs(b) do print("writable",i,k,v,s) end
-for k,v in pairs(a) do print("readable",i,k,v,s) end
---do return 1 end
-
 host='www.google.com'
---host='www.dreamhost.com'
+--host='www.yahoo.com'
+host='www.dreamhost.com'
 --x:connect(t:getfd())
 --b:settimeout(-1)
 msg = string.format('GET / HTTP/1.1\r\nHost: %s\r\n\r\n', host)
 for i =1,10 do
 x=lxyssl.ssl()
-b=bufferio.wrap(x,true)
+b=bufferio.wrap(x)
 t=socket.tcp()
 t:connect(host,443)
 b:connect(t:getfd())
 if id then 
     lid = id
-    b:sessinfo(id,master) 
+    b:sessinfo(id,master,cipher) 
 end
 c=0
-print(msg)
+--print(msg)
 repeat
-    o,err,c = b:send(msg,c)
+    o,err,c = b:send(msg,c+1)
     --o,err,c = x:send('GET / HTTP/1.1\r\nhost: www.yahoo.com\r\n\r\n')
 until o==#msg or err ~= "timeout"
 
@@ -73,7 +56,8 @@ repeat
     end
 until err == "closed" or err=="nossl"
 if err ~= "nossl" and err ~= "nossl" then b:receive('*a') end
-id,master = b:sessinfo()
+id,master,cipher = b:sessinfo()
+print(id:hex(),master:hex())
 if id==lid then print("session reuse", id:hex(), master:hex()) end
 --print(x:cipher(), x:peer(), x:name())
 b:reset()
@@ -100,11 +84,11 @@ assert(lxyssl.hash('hmac-md5','test'):digest('test'):hex()=="cd4b0dcbe0f4538b979
 assert(lxyssl.hash('hmac-sha1','test'):digest('test'):hex()=="0c94515c15e5095b8a87a50ba0df3bf38ed05fe6")
 
 key='abcdabcdabcdabcd'
-data=('a'):rep(96)
+data=('a'):rep(8192)
 iv=lxyssl.hash('md5'):digest(key)
 assert(lxyssl.aes(key):decrypt(lxyssl.aes(key):encrypt(data)) == data)
 assert(lxyssl.aes(key):cbc_decrypt(lxyssl.aes(key):cbc_encrypt(data,iv),iv) == data)
-assert(lxyssl.aes(key):cfb_decrypt(lxyssl.aes(key):cfb_encrypt(data,iv),iv) == data)
+assert(lxyssl.aes(key):cfb_decrypt(lxyssl.aes(key):cfb_encrypt(data .. "a",iv),iv) == data .."a")
 assert(lxyssl.rc4(key):crypt(lxyssl.rc4(key):crypt(data)) == data)
 assert(#lxyssl.rand(2000) == 2000)
 assert(lxyssl.rand(2000) ~= lxyssl.rand(2000))
