@@ -125,6 +125,7 @@ local function send(self, data, i, j)
 end
 
 function wrap(p, buffered_write,buffered_read)
+    if buffered_write == nil then buffered_write = p.buffered_write end
     local o = {p=p, buffered_write=buffered_write,buffered_read=buffered_read}
     for k,v in pairs(getmetatable(p).__index) do
         if type(v) == "function" then
