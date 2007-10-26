@@ -55,7 +55,6 @@ local function receive(self, pattern, part)
         if size < pattern then 
             return nil, err, data
         elseif pattern == 0 and err then
-            print(self, data and #data or 0,err,chunk and #chunk or 0)
             return nil, err, ""
         else return data end
     elseif pattern == "*a" or pattern == "*all" then

@@ -22,14 +22,16 @@ end
 host='www.google.com'
 --host='www.yahoo.com'
 host='www.dreamhost.com'
+--host='localhost'
+port=443
 --x:connect(t:getfd())
 --b:settimeout(-1)
 msg = string.format('GET / HTTP/1.1\r\nHost: %s\r\n\r\n', host)
-for i =1,10 do
+for i =1,10 do 
 x=lxyssl.ssl()
 b=bufferio.wrap(x)
 t=socket.tcp()
-t:connect(host,443)
+t:connect(host,port)
 b:connect(t:getfd())
 if id then 
     lid = id
@@ -42,10 +44,10 @@ repeat
     --o,err,c = x:send('GET / HTTP/1.1\r\nhost: www.yahoo.com\r\n\r\n')
 until o==#msg or err ~= "timeout"
 
-print(b:peer(), b:name(), b:cipher())
+print(i, b:peer(), b:name(), b:cipher())
 
 repeat
-    d,err,i = b:receive()
+    d,err,_ = b:receive()
     --d,err,i = x:receive(1000)
     if not err then 
         print(d)
@@ -57,14 +59,13 @@ repeat
 until err == "closed" or err=="nossl"
 if err ~= "nossl" and err ~= "nossl" then b:receive('*a') end
 id,master,cipher = b:sessinfo()
-print(id:hex(),master:hex())
+print(i, id:hex(),master:hex())
 if id==lid then print("session reuse", id:hex(), master:hex()) end
 --print(x:cipher(), x:peer(), x:name())
-b:reset()
+--b:reset()
 --b:close()
-t:close()
+--t:close()
 end
-
 md5=lxyssl.hash('md5')
 md5:update('a')
 md5:update('b')
@@ -128,4 +129,4 @@ for i=1,10 do
 end
 
 assert(table.concat(t,"")==data:rep(10))
-
+print("test done")

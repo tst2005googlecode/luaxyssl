@@ -210,9 +210,8 @@ static int my_get_session(ssl_context *ssl)
 	}
     lua_pushvalue(L, 1);
     lua_pushlstring(L, ssl->session->id, ssl->session->length);
-    lua_pushnumber(L, ssl->session->start);
     lua_pushnumber(L, ssl->session->cipher);
-    ret = lua_pcall(L, 4, 1, 0);
+    ret = lua_pcall(L, 3, 1, 0);
     if (ret) {
         lua_pop(L,1);
         return 1;
@@ -221,9 +220,11 @@ static int my_get_session(ssl_context *ssl)
         int len;
         const char *master = luaL_checklstring(L, -1, &len);
         memcpy(ssl->session->master, master, len < sizeof(ssl->session->master) ? len : sizeof(ssl->session->master));
+        lua_pop(L, 1);
+        return 0;
     }
     lua_pop(L, 1);
-    return 0;
+    return 1;
 }
 
 static int my_set_session(ssl_context *ssl)
@@ -239,10 +240,9 @@ static int my_set_session(ssl_context *ssl)
     }
     lua_pushvalue(L, 1);
     lua_pushlstring(L, ssl->session->id, ssl->session->length);
-    lua_pushnumber(L, ssl->session->start);
     lua_pushnumber(L, ssl->session->cipher);
     lua_pushlstring(L, ssl->session->master, sizeof(ssl->session->master));
-    ret = lua_pcall(L, 5, 1, 0);
+    ret = lua_pcall(L, 4, 1, 0);
     lua_pop(L,1);
     return 0;
 }
@@ -1093,6 +1093,8 @@ static int Lssl(lua_State *L)
     ssl_set_sidtable( ssl, session_table );
     ssl_set_dhm_vals( ssl, dhm_P, dhm_G );
  #else
+    ssl_set_scb(ssl, my_get_session, my_set_session);
+    ssl_set_dh_param( ssl, xyssl->dhm_P ? xyssl->dhm_P : default_dhm_P, xyssl->dhm_G ? xyssl->dhm_G : default_dhm_G);
  #endif
     xyssl->dhm_P = malloc(strlen(dhm_P)+1);
     xyssl->dhm_G = malloc(strlen(dhm_G)+1);

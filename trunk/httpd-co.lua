@@ -10,6 +10,12 @@ MAX_SESSIONS = 10000
 MAX_SSL = 100
 --copas.WATCH_DOG_TIMEOUT = 600
 
+string.hex = function(x)
+    local t={}
+    for c in x:gmatch('(.)') do t[#t+1]=string.format("%02x", c:byte()) end
+    return table.concat(t,"")
+end
+
 local function proto_index(o, k)  
     --local v = o.__proto[k]
     local v = rawget(o, '__proto')[k]
@@ -102,11 +108,20 @@ local dispatch={
     end,
 }
 
+local sessions=setmetatable({},{__mode="kv"})
 local function handler(skt,is_ssl)
     skt:setoption('tcp-nodelay', true)
     local ip,port = skt:getsockname()
 
     local x = lxyssl.ssl(1) --1 is ssl server nil or 0 is client
+    getmetatable(x).get_session = function(o, id, cipher)
+    local s = sessions[id]
+    if s and s.cipher == cipher then return s.master end
+    end
+    getmetatable(x).set_session = function(o, id, cipher, master)
+    sessions[id] = {cipher=cipher, master=master}
+    end
+
     --local b = bufferio.wrap(port == 4433 and x or skt, true, port ~= 4433)
     local b = is_ssl and bufferio.wrap(x) or prototype(skt)
 
@@ -125,6 +140,7 @@ local function handler(skt,is_ssl)
     --local client = (port == 4433) and copas.wrap(b) or copas.wrap(skt)
     --local client = copas.wrap(skt)
     local action,err,chunk = read()
+    print(action,err,chunk)
     while action and #action > 0 do
         local h = {}
         local data
