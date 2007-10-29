@@ -160,6 +160,57 @@ unsigned char default_session_table[SSL_SESSION_TBL_LEN];
 unsigned char *session_table = default_session_table;
 int malloc_sidtable = 0;
 
+#ifdef XYSSL_POST_07
+/*
+ * These session callbacks use a simple chained list
+ * to store and retrieve the session information.
+ */
+ssl_session s_list[SSL_SESSION_TBL_LEN];
+
+static int default_get_session( ssl_context *ssl )
+{
+    time_t t = time( NULL );
+    int i;
+
+    for (i=0; i < SSL_SESSION_TBL_LEN; i++) {
+      ssl_session *cur = &s_list[i];
+      if( ssl->timeout != 0 && t - cur->start > ssl->timeout )
+          continue;
+      if( ssl->session->cipher != cur->cipher ||
+          ssl->session->length != cur->length )
+          continue;
+      if( memcmp( ssl->session->id, cur->id, cur->length ) != 0 )
+          continue;
+      memcpy( ssl->session->master, cur->master, 48 );
+      return( 0 );
+    }
+
+    return( 1 );
+}
+
+static int default_set_session( ssl_context *ssl )
+{
+    time_t t = time( NULL );
+    int i;
+    ssl_session *cur;
+
+    for (i=0; i < SSL_SESSION_TBL_LEN; i++) {
+      cur = &s_list[i];
+      if( memcmp( ssl->session->id, cur->id, cur->length ) == 0 )
+          break; /* client reconnected */
+      if( cur->start == 0 || (ssl->timeout != 0 && t - cur->start > ssl->timeout))
+          break; /* expired */
+    }
+
+    if (i >= SSL_SESSION_TBL_LEN) 
+      i = *((unsigned short*)(ssl->session->id)) % SSL_SESSION_TBL_LEN;
+    cur = &s_list[i];
+    memcpy( cur, ssl->session, sizeof( ssl_session ) );
+    cur->start = t;
+    return( 0 );
+}
+
+#endif
 
 #define EXPORT_HASH_FUNCTIONS
 #if 0
@@ -186,7 +237,11 @@ typedef struct {
 } hash_context;
 
 
-#define MYVERSION	"XySSL for " LUA_VERSION " 0.2"
+#ifdef XYSSL_POST_07
+#define MYVERSION	"XySSL 0.8 for " LUA_VERSION "/0.2"
+#else
+#define MYVERSION	"XySSL 0.7 for " LUA_VERSION "/0.2"
+#endif
 #define MYTYPE		"XySSL SSL object"
 #define MYHASH      "XySSL Hash object"
 #define MYAES       "XySSL AES object"
@@ -205,9 +260,9 @@ static int my_get_session(ssl_context *ssl)
     lua_pushstring(L, "get_session");
     lua_gettable(L, 1);
     if (lua_isnil(L, -1)) {
-	lua_pop(L,1);
-	return 1;
-	}
+      lua_pop(L,1);
+      return default_get_session(ssl);
+	  }
     lua_pushvalue(L, 1);
     lua_pushlstring(L, ssl->session->id, ssl->session->length);
     lua_pushnumber(L, ssl->session->cipher);
@@ -236,7 +291,7 @@ static int my_set_session(ssl_context *ssl)
     lua_gettable(L, 1);
     if (lua_isnil(L, -1)) {
         lua_pop(L,1);
-        return 0;
+        return default_set_session(ssl);
     }
     lua_pushvalue(L, 1);
     lua_pushlstring(L, ssl->session->id, ssl->session->length);
