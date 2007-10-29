@@ -22,7 +22,6 @@ end
 host='www.google.com'
 --host='www.yahoo.com'
 host='www.dreamhost.com'
---host='localhost'
 port=443
 --x:connect(t:getfd())
 --b:settimeout(-1)
