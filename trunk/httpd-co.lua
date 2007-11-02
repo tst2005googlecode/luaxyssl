@@ -140,7 +140,6 @@ local function handler(skt,is_ssl)
     --local client = (port == 4433) and copas.wrap(b) or copas.wrap(skt)
     --local client = copas.wrap(skt)
     local action,err,chunk = read()
-    print(action,err,chunk)
     while action and #action > 0 do
         local h = {}
         local data
@@ -167,8 +166,8 @@ local function handler(skt,is_ssl)
             obj.freq = obj.freq + 1
         else action = nil end
     end
-    --obj:close() 
-    x:close()
+    obj:close() 
+    --x:close()
 end
 
 local e
@@ -185,7 +184,6 @@ local function server(p,ssl)
     local function https_handler(skt)
         if ssl_connections > MAX_SSL then return end
         ssl_connections = ssl_connections + 1
-        print("new ssl connection", ssl_connections)
         local x =  {handler(skt,1)}
         ssl_connections = ssl_connections - 1
         return unpack(x)
