@@ -240,7 +240,7 @@ typedef struct {
 
 #ifdef XYSSL_POST_07
 #ifdef XYSSL_POST_08
-#define MYVERSION	"XySSL 0.9 for " LUA_VERSION "/0.2"
+#define MYVERSION	"XySSL 0.9 for " LUA_VERSION "/0.3"
 #else
 #define MYVERSION	"XySSL 0.8 for " LUA_VERSION "/0.2"
 #endif
