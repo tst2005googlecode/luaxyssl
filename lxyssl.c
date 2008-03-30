@@ -64,6 +64,7 @@ char *default_dhm_G = "4";
 #define ERR_NET_CONN_RESET XYSSL_ERR_NET_CONN_RESET
 #define ERR_SSL_PEER_CLOSE_NOTIFY XYSSL_ERR_SSL_PEER_CLOSE_NOTIFY
 #define XYSSL_POST_07
+#define XYSSL_POST_08
 #define ssl_set_rng_func ssl_set_rng
 #define ssl_set_ciphlist ssl_set_ciphers
 #define aes_decrypt(c,i,o) aes_crypt_ecb(c, AES_DECRYPT, i , o)
@@ -238,7 +239,11 @@ typedef struct {
 
 
 #ifdef XYSSL_POST_07
+#ifdef XYSSL_POST_08
+#define MYVERSION	"XySSL 0.9 for " LUA_VERSION "/0.2"
+#else
 #define MYVERSION	"XySSL 0.8 for " LUA_VERSION "/0.2"
+#endif
 #else
 #define MYVERSION	"XySSL 0.7 for " LUA_VERSION "/0.2"
 #endif
@@ -1569,7 +1574,9 @@ static int Lpeer(lua_State *L)		/** peer() */
 
      if (info) {
         lua_pushstring(L,info);
+     #ifndef XYSSL_POST_08
         free(info);
+     #endif
      } else lua_pushnil(L);
  } else lua_pushnil(L);
 
