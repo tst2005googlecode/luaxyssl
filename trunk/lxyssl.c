@@ -37,6 +37,7 @@
 #include "xyssl/md5.h"
 #include "xyssl/aes.h"
 #include "xyssl/arc4.h"
+#include "xyssl/dhm.h"
 
 /*
  * Computing a safe DH-1024 prime takes ages, so it's faster
@@ -1561,6 +1562,208 @@ static int Lverify(lua_State *L)		/** verify() */
  return 1;
 }
 
+static int Lx509verify(lua_State *L)		/** x509verify(ca, crt) */
+{
+ int top = lua_gettop(L);
+ int crt_size;
+ int ca_size;
+ int ret;
+ int flag;
+ x509_cert ca;
+ x509_cert cert;
+ const char *cacrt = luaL_optlstring(L, 1, test_ca_crt, &ca_size);
+ const char *crt = luaL_optlstring(L, 2, test_cli_crt, &crt_size);
+
+ memset(&ca,0,sizeof(ca));
+ memset(&cert,0,sizeof(cert));
+
+ ret = x509_add_certs( &ca, (unsigned char *) cacrt, ca_size);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"bad ca cert");
+    lua_pushnumber(L, ret);
+    goto exit;
+ }
+
+ ret = x509_add_certs( &cert, (unsigned char *) crt, crt_size);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"bad ca cert");
+    lua_pushnumber(L, ret);
+    goto free_ca;
+ }
+
+ ret = x509parse_verify( &cert, &ca, NULL, &flag);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"untrusted");
+    lua_pushnumber(L, ret);
+ } else {
+    lua_pushboolean(L, 1);
+ }
+
+ x509_free_cert( &cert );
+
+free_ca:
+ x509_free_cert( &ca );
+
+exit:
+
+ return lua_gettop(L) - top;
+}
+
+static int Lrsaverify(lua_State *L)		/** rsaverify(data, sig, [crt]) */
+{
+ int top = lua_gettop(L);
+ int crt_size;
+ int data_size;
+ int sig_size;
+ int ret;
+ x509_cert cert;
+ const char *data = luaL_checklstring(L, 1, &data_size);
+ const char *sig = luaL_checklstring(L, 2, &sig_size);
+ const char *crt = luaL_optlstring(L, 3, test_cli_crt, &crt_size);
+
+ memset(&cert,0,sizeof(cert));
+ ret = x509_add_certs( &cert, (unsigned char *) crt, crt_size);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"bad cert");
+    lua_pushnumber(L, ret);
+    goto exit;
+ }
+
+ #if 1
+ ret = rsa_pkcs1_verify( &cert.rsa, RSA_PUBLIC, RSA_SHA1, data_size, (unsigned char *)data, (unsigned char *)sig);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"bad signature");
+    lua_pushnumber(L, ret);
+ } else {
+    lua_pushboolean(L, 1);
+ }
+ x509_free_cert( &cert );
+#endif 
+
+exit:
+
+ return lua_gettop(L) - top;
+}
+
+static int Lrsaencrypt(lua_State *L)		/** rsaencrypt(data, [crt]) */
+{
+ int top = lua_gettop(L);
+ int crt_size;
+ int data_size;
+ unsigned char m[512];
+ int ret;
+ x509_cert cert;
+ const char *data = luaL_checklstring(L, 1, &data_size);
+ const char *crt = luaL_optlstring(L, 2, test_cli_crt, &crt_size);
+
+ memset(&cert,0,sizeof(cert));
+ ret = x509_add_certs( &cert, (unsigned char *) crt, crt_size);
+ ret = x509_add_certs( &cert, (unsigned char *) crt, crt_size);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"bad cert");
+    lua_pushnumber(L, ret);
+    goto exit;
+ }
+
+ ret = rsa_pkcs1_encrypt( &cert.rsa, RSA_PUBLIC, data_size, (unsigned char *)data, (unsigned char *)m);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"bad signature");
+    lua_pushnumber(L, ret);
+ } else {
+    lua_pushlstring(L, m, cert.rsa.len);
+ }
+ 
+ x509_free_cert( &cert );
+
+exit:
+
+ return lua_gettop(L) - top;
+}
+
+static int Lrsasign(lua_State *L)		/** rsasign(data, [key, [pw]]) */
+{
+ int top = lua_gettop(L);
+ int key_size;
+ int data_size;
+ int pwd_len;
+ int ret;
+ unsigned char sig[512];
+ rsa_context rsa;
+ const char *data = luaL_checklstring(L, 1, &data_size);
+ const char *key = luaL_optlstring(L, 2, test_cli_key, &key_size);
+ const char *pwd = luaL_optlstring(L, 3, NULL, &pwd_len);
+
+ memset(&rsa, 0, sizeof(rsa));
+ ret = x509_parse_key(&rsa, (unsigned char *) key, key_size, (unsigned char *)pwd, pwd_len);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"fail to read private key ");
+    lua_pushnumber(L, ret);
+    goto exit;
+ }
+
+ ret = rsa_pkcs1_sign( &rsa, RSA_PRIVATE, RSA_SHA1, data_size, (unsigned char *)data, (unsigned char *)sig);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"fail to sign");
+    lua_pushnumber(L, ret);
+ } else {
+    lua_pushlstring(L, sig, rsa.len);
+ }
+ 
+ rsa_free( &rsa );
+
+exit:
+
+ return lua_gettop(L) - top;
+}
+
+static int Lrsadecrypt(lua_State *L)		/** rsadecrypt(data, [key, [pw]]) */
+{
+ int top = lua_gettop(L);
+ int key_size;
+ int data_size;
+ int pwd_len;
+ int out_len;
+ int ret;
+ unsigned char m[512];
+ rsa_context rsa;
+ const char *data = luaL_checklstring(L, 1, &data_size);
+ const char *key = luaL_optlstring(L, 2, test_cli_key, &key_size);
+ const char *pwd = luaL_optlstring(L, 3, NULL, &pwd_len);
+
+ memset(&rsa, 0, sizeof(rsa));
+ ret = x509_parse_key(&rsa, (unsigned char *) key, key_size, (unsigned char *)pwd, pwd_len);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"fail to read private key ");
+    lua_pushnumber(L, ret);
+    goto exit;
+ }
+
+ ret = rsa_pkcs1_decrypt( &rsa, RSA_PRIVATE, &out_len, (unsigned char *)data, (unsigned char *)m);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"fail to sign");
+    lua_pushnumber(L, ret);
+ } else {
+    lua_pushlstring(L, m, out_len);
+ }
+ 
+ rsa_free( &rsa );
+
+exit:
+
+ return lua_gettop(L) - top;
+}
+
 static int Lpeer(lua_State *L)		/** peer() */
 {
  xyssl_context *xyssl=Pget(L,1);
@@ -1665,6 +1868,81 @@ static int Ltostring(lua_State *L)		/** tostring(c) */
  return 1;
 }
 
+static int Ldhmsecret(lua_State *L) /** dhsecret(public, private, [P, [G]]) */
+{
+ int top = lua_gettop(L);
+ int public_size;
+ int private_size;
+ int ret;
+ dhm_context dhm;
+ unsigned char buf[512];
+ int olen = sizeof(buf);
+
+ const char *public = luaL_checklstring(L, 1, &public_size);
+ const char *private = luaL_checklstring(L, 2, &private_size);
+ char *dhm_P = (char *)luaL_optstring(L, 3, default_dhm_P);
+ char *dhm_G = (char *)luaL_optstring(L, 4, default_dhm_G);
+
+ memset(&dhm,0,sizeof(dhm));
+ if ((ret = mpi_read_string(&dhm.P, 16, dhm_P)) ||
+     (ret = mpi_read_string(&dhm.G, 16, dhm_G)) ||
+     (ret = mpi_read_binary(&dhm.X, (unsigned char *)private, private_size)) ||
+     (ret = mpi_read_binary(&dhm.GY, (unsigned char *)public, public_size))) {
+    lua_pushnil(L);
+    lua_pushstring(L,"error reading DH parameters");
+    lua_pushnumber(L, ret);
+    goto exit;
+     }
+ dhm.len = mpi_size(&dhm.P);
+ if (ret = dhm_calc_secret(&dhm, buf, &olen)) {
+    lua_pushnil(L);
+    lua_pushstring(L,"error generating secret");
+    lua_pushnumber(L, ret);
+ } else {
+    lua_pushlstring(L, buf, olen);
+ }
+
+exit:
+ dhm_free(&dhm);
+
+ return lua_gettop(L) - top;
+}
+
+static int Ldhmparams(lua_State *L) /** dhmparam(count, [P, [G]]) */
+{
+ int top = lua_gettop(L);
+ int ret;
+ dhm_context dhm;
+ unsigned char buf[512];
+ int olen = sizeof(buf);
+
+ const int count = luaL_checkinteger(L, 1);
+ char *dhm_P = (char *)luaL_optstring(L, 2, default_dhm_P);
+ char *dhm_G = (char *)luaL_optstring(L, 3, default_dhm_G);
+
+ memset(&dhm,0,sizeof(dhm));
+ if ((ret = mpi_read_string(&dhm.P, 16, dhm_P)) ||
+     (ret = mpi_read_string(&dhm.G, 16, dhm_G)) ||
+     (ret = dhm_make_params(&dhm, count, buf, &olen, havege_rand, &hs))) {
+    lua_pushnil(L);
+    lua_pushstring(L,"error reading DH parameters");
+    lua_pushnumber(L, ret);
+    goto exit;
+     }
+ olen = mpi_size(&dhm.GX);
+ MPI_CHK(mpi_write_binary(&dhm.GX, buf, olen));
+ lua_pushlstring(L, buf, olen);
+ olen = mpi_size(&dhm.X);
+ MPI_CHK(mpi_write_binary(&dhm.X, buf, olen));
+ lua_pushlstring(L, buf, olen);
+
+cleanup:
+exit:
+ dhm_free(&dhm);
+
+ return lua_gettop(L) - top;
+}
+
 static int Lrand(lua_State *L)		/** rand(bytes) */
 {
  luaL_Buffer B;
@@ -1750,6 +2028,13 @@ static const luaL_reg Rm[] = {
 	{ "ev_select", Levent_select},
 #endif
 	{ "probe",	Lprobe	},
+	{ "x509verify",	Lx509verify	},
+	{ "rsasign",	Lrsasign	},
+	{ "rsaverify",	Lrsaverify	},
+	{ "rsaencrypt",	Lrsaencrypt	},
+	{ "rsadecrypt",	Lrsadecrypt	},
+	{ "dhmparams",	Ldhmparams	},
+	{ "dhmsecret",	Ldhmsecret	},
 	{ "sessions",	Lsessions},
 	{ "rand",	Lrand	},
 	{ "aes",	Laes	},
