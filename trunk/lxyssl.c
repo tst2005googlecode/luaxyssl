@@ -390,7 +390,7 @@ static int Preset(lua_State *L)			/** reset(c) */
 static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
 {
  xyssl_context *xyssl=Pget(L,1);
- int read_fd = luaL_checknumber(L,2);
+ int read_fd = (int) luaL_checknumber(L,2);
  int re_open = lua_toboolean(L, lua_isnumber(L,3) ? 4 : 3);
  int write_fd = lua_isnumber(L, 3) ? lua_tointeger(L,3) : read_fd;
 
@@ -1216,7 +1216,7 @@ static int Lsessinfo(lua_State *L)			/** sessinfo(c) */
  char *sessid = (char *)luaL_optlstring(L, 2, NULL, &id_len);
  int master_len;
  char *master = (char *)luaL_optlstring(L, 3, NULL, &master_len);
- int cipher = luaL_optnumber(L,4,0);
+ int cipher = (int) luaL_optnumber(L,4,0);
  
  #ifndef XYSSL_POST_07
  ssl_context *ssl=&xyssl->ssl;
@@ -1341,7 +1341,7 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
  int    top = lua_gettop(L);
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
- size_t cnt = luaL_checknumber(L,2);
+ size_t cnt = (size_t) luaL_checknumber(L,2);
  size_t part_cnt;
  const char *part = luaL_optlstring(L, 3, NULL, &part_cnt);
  size_t len = 0;
@@ -1926,15 +1926,24 @@ static int Ldhmparams(lua_State *L) /** dhmparam(count, [P, [G]]) */
      (ret = dhm_make_params(&dhm, count, buf, &olen, havege_rand, &hs))) {
     lua_pushnil(L);
     lua_pushstring(L,"error reading DH parameters");
-    lua_pushnumber(L, ret);
+    lua_pushnumber(L, 0 - ret);
     goto exit;
      }
  olen = mpi_size(&dhm.GX);
- MPI_CHK(mpi_write_binary(&dhm.GX, buf, olen));
+ MPI_CHK(mpi_write_binary(&dhm.GX, buf, olen)); /* just the public part, GX */
  lua_pushlstring(L, buf, olen);
+
  olen = mpi_size(&dhm.X);
- MPI_CHK(mpi_write_binary(&dhm.X, buf, olen));
+ MPI_CHK(mpi_write_binary(&dhm.X, buf, olen)); /* the private part X */
  lua_pushlstring(L, buf, olen);
+
+ olen = sizeof(buf);
+ MPI_CHK(mpi_write_string(&dhm.P, 16, buf, &olen)); /* the prime in hex string form */
+ lua_pushlstring(L, buf, olen); 
+
+ olen = sizeof(buf);
+ MPI_CHK(mpi_write_string(&dhm.G, 16, buf, &olen)); /* the prime in hex string form */
+ lua_pushlstring(L, buf, olen); 
 
 cleanup:
 exit:
@@ -1946,7 +1955,7 @@ exit:
 static int Lrand(lua_State *L)		/** rand(bytes) */
 {
  luaL_Buffer B;
- int cnt = luaL_optnumber(L,1,1);
+ int cnt = (int) luaL_optnumber(L,1,1);
  int i;
  int rem;
  unsigned char buf[256];
