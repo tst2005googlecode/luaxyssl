@@ -128,4 +128,24 @@ for i=1,10 do
 end
 
 assert(table.concat(t,"")==data:rep(10))
+
+a=lxyssl.rsasign('abc')
+assert(lxyssl.rsaverify('abc', a))
+
+a=lxyssl.rsaencrypt('abc')
+assert(lxyssl.rsadecrypt(a)=='abc')
+
+gx,x,p,g=lxyssl.dhmparams(256)
+gy,y = lxyssl.dhmparams(256,p,g)
+gz,z = lxyssl.dhmparams(256,p,g)
+assert(gx ~= gy)
+assert(gy ~= gz)
+assert(gx ~= gz)
+xy = lxyssl.dhmsecret(gy,x, p,g)
+yx = lxyssl.dhmsecret(gx,y, p,g)
+zy = lxyssl.dhmsecret(gy,z, p,g)
+yz = lxyssl.dhmsecret(gz,y, p,g)
+zx = lxyssl.dhmsecret(gx,z, p,g)
+xz = lxyssl.dhmsecret(gz,x, p,g)
+assert(xy==yx and zy == yz and xz==zx)
 print("test done")
