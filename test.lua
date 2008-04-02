@@ -135,7 +135,14 @@ assert(lxyssl.rsaverify('abc', a))
 a=lxyssl.rsaencrypt('abc')
 assert(lxyssl.rsadecrypt(a)=='abc')
 
-gx,x,p,g=lxyssl.dhmparams(256)
+P256="BC128EC94B1A9AEA42FBD79EC9434F5DF1B07852F2773769F9A13F209CAFBC9B"
+G = "04"
+
+P512="9A1EC9FBD2F2AC04FEE7F52687C9E57D7362446CBDB8F875B1681189FB4B38EF586BEC35ABAF718378467424143C5DD0937387FB4590D723D168FACDBC62E65B"
+
+G = "04"
+
+gx,x,p,g=lxyssl.dhmparams(256,P512,G)
 gy,y = lxyssl.dhmparams(256,p,g)
 gz,z = lxyssl.dhmparams(256,p,g)
 assert(x)
@@ -154,4 +161,5 @@ yz = lxyssl.dhmsecret(gz,y, p,g)
 zx = lxyssl.dhmsecret(gx,z, p,g)
 xz = lxyssl.dhmsecret(gz,x, p,g)
 assert(xy==yx and zy == yz and xz==zx)
+print(#xy,#gx,#p,#g)
 print("test done")

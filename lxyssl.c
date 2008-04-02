@@ -1913,7 +1913,7 @@ static int Ldhmparams(lua_State *L) /** dhmparam(count, [P, [G]]) */
  int top = lua_gettop(L);
  int ret;
  dhm_context dhm;
- unsigned char buf[512];
+ unsigned char buf[520];
  int olen = sizeof(buf);
 
  const int count = luaL_checkinteger(L, 1);
@@ -1937,13 +1937,19 @@ static int Ldhmparams(lua_State *L) /** dhmparam(count, [P, [G]]) */
  MPI_CHK(mpi_write_binary(&dhm.X, buf, olen)); /* the private part X */
  lua_pushlstring(L, buf, olen);
 
- olen = sizeof(buf);
- MPI_CHK(mpi_write_string(&dhm.P, 16, buf, &olen)); /* the prime in hex string form */
- lua_pushlstring(L, buf, olen); 
+ if (strcmp(dhm_P, default_dhm_P) == 0) {
+   olen = sizeof(buf);
+   MPI_CHK(mpi_write_string(&dhm.P, 16, buf, &olen)); /* the prime in hex string form */
+   lua_pushstring(L, buf); 
 
- olen = sizeof(buf);
- MPI_CHK(mpi_write_string(&dhm.G, 16, buf, &olen)); /* the prime in hex string form */
- lua_pushlstring(L, buf, olen); 
+   olen = sizeof(buf);
+   MPI_CHK(mpi_write_string(&dhm.G, 16, buf, &olen)); /* the prime in hex string form */
+   lua_pushstring(L, buf); 
+   } 
+ else {
+   lua_pushstring(L, dhm_P); /* just return back the passed P */
+   lua_pushstring(L, dhm_G); /* just return back the passed G */
+   }
 
 cleanup:
 exit:
