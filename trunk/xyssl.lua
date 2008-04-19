@@ -12,7 +12,7 @@ local ipairs=ipairs
 local pairs=pairs
 local tconcat=table.concat
 local tostring=tostring
-module 'xyssl'
+module 'ssl'
 
 local function proto_index(o, k)  
     --local v = o.__proto[k]
