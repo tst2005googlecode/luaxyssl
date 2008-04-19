@@ -139,6 +139,7 @@ function wrap(p, buffered_write,buffered_read)
     o.send = send
     o.write = send
     o.dirty = dirty
+    o.__index = o
     
     return o
 end
