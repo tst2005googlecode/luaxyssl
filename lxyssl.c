@@ -692,11 +692,11 @@ static int Levent(lua_State *L)
 static int Lhash(lua_State *L)
 {
  const char *type = luaL_checkstring(L,1);
- int klen;
+ int klen=0;
  const unsigned char *key = luaL_optlstring(L, 2, NULL, &klen);
  hash_context *obj = lua_newuserdata(L,sizeof(hash_context));
  
- if (!klen) {
+ if (!key) {
      if (memcmp(type,"md5",3)==0) {
         md5_starts(&obj->eng.md5);
         obj->id = MD5;
