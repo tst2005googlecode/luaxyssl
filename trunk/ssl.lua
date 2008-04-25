@@ -12,6 +12,7 @@ local ipairs=ipairs
 local pairs=pairs
 local tconcat=table.concat
 local tostring=tostring
+local string=string
 module 'ssl'
 
 local function proto_index(o, k)  
