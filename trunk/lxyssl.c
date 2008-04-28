@@ -1793,7 +1793,7 @@ static int Lcipher_info(lua_State *L)		/** cipher_info() */
  #ifndef XYSSL_POST_07
  char *cipher_choosen = ssl_get_cipher_name(ssl);
  #else
- char *cipher_choosen = NULL;
+ char *cipher_choosen = ssl_get_cipher(ssl);
  #endif
  if (cipher_choosen) {
     lua_pushstring(L,cipher_choosen);
@@ -2033,6 +2033,8 @@ static const luaL_reg Raes[] =
 static const luaL_reg Rrc4[] = 
 {
     { "crypt", Lrc4_crypt},
+    { "encrypt", Lrc4_crypt},
+    { "decrypt", Lrc4_crypt},
 	{ NULL,		NULL	}
 };
 
