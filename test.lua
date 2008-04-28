@@ -1,7 +1,8 @@
 require'bufferio'
 require'socket'
 require'lxyssl'
-
+require'security'
+require'ssl'
 string.hex = function(x)
     local t={}
     for c in x:gmatch('(.)') do t[#t+1]=string.format("%02x", c:byte()) end
@@ -19,6 +20,35 @@ local function prototype(o)
     return setmetatable({__proto=o}, {__index = proto_index })
 end
 
+assert(security.hash.engine('md5'):digest(''):hex() == "d41d8cd98f00b204e9800998ecf8427e")
+assert(security.hmac.engine('md5','test'):digest('test'):hex()=="cd4b0dcbe0f4538b979fb73664f51abe")
+assert(security.hmac.engine('sha1','test'):digest('test'):hex()=="0c94515c15e5095b8a87a50ba0df3bf38ed05fe6")
+data=('a'):rep(8192)
+iv=lxyssl.hash('md5'):digest(key)
+k = security.hash.engine('md5'):digest('abcd')
+a = security.crypto.engine('aes',k)
+assert(a:decrypt(a:encrypt(data)) == data)
+a = security.crypto.engine('aes_cbc', k, k)
+assert(a:decrypt((a:encrypt(data))) == data)
+a = security.crypto.engine('aes_cfb', k, k)
+assert(a:decrypt((a:encrypt(data))) == data)
+a = security.crypto.engine('rc4', k)
+b = security.crypto.engine('rc4', k)
+assert(b:decrypt((a:encrypt(data))) == data)
+assert(security.rand(256) ~= security.rand(256))
+
+a=security.rsa.sign('abc')
+assert(security.rsa.verify('abc', a))
+
+a=security.rsa.encrypt('abc')
+assert(security.rsa.decrypt(a)=='abc')
+
+gx,x,p,g=security.dh.params(256)
+gy,y = security.dh.params(256, p, g)
+gxy = security.dh.secret(gx, y, p, g)
+gyx = security.dh.secret(gy, x, p, g)
+assert(gxy==gyx)
+
 host='www.google.com'
 --host='www.yahoo.com'
 --host='www.dreamhost.com'
@@ -27,11 +57,12 @@ port=443
 --b:settimeout(-1)
 msg = string.format('GET / HTTP/1.1\r\nHost: %s\r\n\r\n', host)
 for i =1,10 do 
-x=lxyssl.ssl()
-b=bufferio.wrap(x)
+--x=lxyssl.ssl()
+--b=bufferio.wrap(x)
 t=socket.tcp()
 t:connect(host,port)
-b:connect(t:getfd())
+--b:connect(t:getfd())
+b = ssl.stream(t)
 if id then 
     lid = id
     b:sessinfo(id,master,cipher) 
@@ -60,7 +91,7 @@ if err ~= "nossl" and err ~= "nossl" then b:receive('*a') end
 id,master,cipher = b:sessinfo()
 print(i, id:hex(),master:hex())
 if id==lid then print("session reuse", id:hex(), master:hex()) end
---print(x:cipher(), x:peer(), x:name())
+print("cipher used:", b:cipher(), "peer:", b:peer(), "name:", b:name())
 --b:reset()
 --b:close()
 --t:close()
@@ -162,4 +193,5 @@ zx = lxyssl.dhmsecret(gx,z, p,g)
 xz = lxyssl.dhmsecret(gz,x, p,g)
 assert(xy==yx and zy == yz and xz==zx)
 print(#xy,#gx,#p,#g)
+
 print("test done")

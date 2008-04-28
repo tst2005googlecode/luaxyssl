@@ -3,7 +3,7 @@
 # change these to reflect your Lua installation
 LUA= c:/lua5.1
 LUA_INC= $(LUA)/include
-LUA_LIB= $(LUA)/lua5.1.lib
+LUA_LIB= $(LUA)/lua51.lib
 
 # change these to reflect your xyssl lib installation
 XYSSL_VERSION=0.9
@@ -12,7 +12,7 @@ XYSSL_LIB=z:/xyssl-$(XYSSL_VERSION)/visualc/xyssl.lib
 XYSSL_FEATURES	= -DHAVE_LONGLONG -DHAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 -DNO_DES
 
 MYNAME= lxyssl
-#VCRT=DLL #comment out if static link VCRT is desired
+VCRT=DLL #comment out if static link VCRT is desired
 
 # no need to change anything below here
 MYLIB= $(MYNAME)

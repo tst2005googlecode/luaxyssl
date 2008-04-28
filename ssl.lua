@@ -43,6 +43,20 @@ local function connect(self,...)
   return r, e
 end
 
+function stream(sock, close, auth, keycert, client)
+  --this function should be used to turn normal socket into ssl stream
+  --for the possibility of being subsituted with alternative library(like luaclr which is C# only)
+  --sock is a connected socket
+  --close a flag indicate if the underlying socket should be closed if the ssl stream is closed
+  --auth  is a callback function to determine if security policy is allowed
+  --keycert is a callback function to retrieve the x509 key use(if there is multiple)
+  --client indicate if this stream is for client or server(as the handshaking is different)
+  local x = lxyssl.ssl(client)
+  x:keycert(keycert and kercert()) --setup server cert, would use embedded testing one none is given
+  x:connect(sock:getfd())
+  return bufferio.wrap(x) -- return a standard bufferio object
+end
+
 function request(reqt, b)
   if type(reqt) == "string" then
     local t = {}
