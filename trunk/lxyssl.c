@@ -27,6 +27,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 
+#define EXPORT_SHA2
 #include "xyssl/net.h"
 #include "xyssl/ssl.h"
 #include "xyssl/havege.h"
@@ -61,6 +62,8 @@ char *default_dhm_G = "4";
 #define SSL3_RSA_RC4_128_SHA SSL_RSA_RC4_128_SHA
 #define TLS1_EDH_RSA_AES_256_SHA SSL_EDH_RSA_AES_256_SHA
 #define TLS1_RSA_AES_256_SHA SSL_RSA_AES_256_SHA
+#define SSL3_EDH_RSA_DES_168_SHA SSL_EDH_RSA_DES_168_SHA
+#define SSL3_RSA_DES_168_SHA SSL_RSA_DES_168_SHA
 #define ERR_NET_WOULD_BLOCK XYSSL_ERR_NET_TRY_AGAIN
 #define ERR_NET_CONN_RESET XYSSL_ERR_NET_CONN_RESET
 #define ERR_SSL_PEER_CLOSE_NOTIFY XYSSL_ERR_SSL_PEER_CLOSE_NOTIFY
@@ -86,7 +89,7 @@ int my_preferred_ciphers[] =
     SSL3_RSA_RC4_128_SHA,
     TLS1_EDH_RSA_AES_256_SHA,
     TLS1_RSA_AES_256_SHA,
-#if 0
+#if 1
     SSL3_EDH_RSA_DES_168_SHA,
     SSL3_RSA_DES_168_SHA,
 #endif
@@ -742,12 +745,16 @@ static int Lhash(lua_State *L)
         obj->finish = (hash_finish_func) sha1_hmac_finish;
 #ifdef EXPORT_SHA2
      } else if (memcmp(type,"hmac-sha2",9)==0) {
+  #ifndef XYSSL_POST_07
         sha2_hmac_starts(&obj->eng.sha2, 0, (unsigned char *)key, klen);
+  #else
+        sha2_hmac_starts(&obj->eng.sha2, (unsigned char *)key, klen, 0);
+  #endif
         obj->id = HMAC_SHA2;
         obj->hash_size = 32;
-        obj->starts = sha2_starts;
-        obj->update = sha2_hmac_update;
-        obj->finish = sha2_hmac_finish;
+        obj->starts = (hash_start_func) sha2_starts;
+        obj->update = (hash_update_func) sha2_hmac_update;
+        obj->finish = (hash_finish_func) sha2_hmac_finish;
 #endif
      } else {
         lua_pop(L, 1);

@@ -5,13 +5,13 @@ rand = lxyssl.rand
 
 module('security.hash', package.seeall)
 function engine(engine)
-  local algo = {md5 = 'md5', sha1 = 'sha1', sha2 = 'sha2', sha256 = 'sha256'}
+  local algo = {md5 = 'md5', sha='sha1',sha1 = 'sha1', sha2 = 'sha2', sha256 = 'sha2'}
   return lxyssl.hash(algo[engine])
 end
 
 module('security.hmac', package.seeall)
 function engine(engine, key)
-  local algo = {md5 = 'hmac-md5', sha1 = 'hmac-sha1', sha2 = 'hmac-sha2', sha256 = 'hmac-sha256'}
+  local algo = {md5 = 'hmac-md5', sha='hmac-sha1', sha1 = 'hmac-sha1', sha2 = 'hmac-sha2', sha256 = 'hmac-sha2'}
   return lxyssl.hash(algo[engine], key)
 end
 
