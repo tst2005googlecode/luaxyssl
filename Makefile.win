@@ -42,4 +42,4 @@ $T:	$(OBJS)
 !endif
 
 clean:
-	del *.obj *.manifest *.lib *.dll
+	del *.obj *.manifest *.lib *.dll *.idb

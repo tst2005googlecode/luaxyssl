@@ -69,7 +69,14 @@ end
 module('security.x509', package.seeall)
 
 function verify(crt, ca)
-  return lxyssl.x509verify(ca, crt)
+  --verify a cert against a list of CA
+  if type(ca) == "table" then
+    for _, v in pairs(ca) do
+      if lxyssl.x509verify(ca, crt) then return true end
+    end
+  else
+      return lxyssl.x509verify(ca, crt) 
+  end
 end
 
 module('security.dh', package.seeall)
