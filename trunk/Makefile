@@ -6,8 +6,8 @@ LUAINC= $(LUA)/include/lua5.1
 LUALIB= $(LUA)/lib
 LUABIN= $(LUA)/bin
 XYSSL_VERSION=0.9
-XYSSL_INC=/home/colinux/xyssl-$(XYSSL_VERSION)/include
-XYSSL_LIB=/home/colinux/xyssl-$(XYSSL_VERSION)/library
+XYSSL_INC=xyssl-$(XYSSL_VERSION)/include
+XYSSL_LIB=xyssl-$(XYSSL_VERSION)/library
 XYSSL_FEATURES	= -DHAVE_LONGLONG -DHAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 -DNO_DES
 MYNAME= lxyssl
 # no need to change anything below here
@@ -23,17 +23,22 @@ OBJS= $(MYLIB).o
 LIBS= -lxyssl 
 CC=gcc
 
-all:	so
+
+all: so 
+	
+xyssl: 
+	cd xyssl-$(XYSSL_VERSION)/library && make all && cd ../..
 
 o:	$(MYLIB).o
 
-so:	$T
+so:	xyssl $T 
 
 $T:	$(OBJS) 
 	$(CC) -o $@ -shared $(OBJS) $(LIBS) $(LDFLAGS)
 	strip $@
 
 clean:
+	cd xyssl-$(XYSSL_VERSION)/library && make clean && cd ../..
 	rm -f $(OBJS) $T core core.* a.out 
 
 doc:
