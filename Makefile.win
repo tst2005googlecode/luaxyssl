@@ -1,14 +1,16 @@
 # Windows makefile for xyssl library for Lua
 
 # change these to reflect your Lua installation
-LUA= c:/lua5.1
+LUA= c:\luajit
 LUA_INC= $(LUA)/include
 LUA_LIB= $(LUA)/lua51.lib
+LUA_INSTALL_LIBDIR=$(LUA)
+LUA_INSTALL_DIR=$(LUA)\lua
 
 # change these to reflect your xyssl lib installation
 XYSSL_VERSION=0.9
-XYSSL_INC=z:/xyssl-$(XYSSL_VERSION)/include
-XYSSL_LIB=z:/xyssl-$(XYSSL_VERSION)/visualc/xyssl.lib
+XYSSL_INC=xyssl-$(XYSSL_VERSION)/include
+XYSSL_LIB=xyssl-$(XYSSL_VERSION)/library/xyssl.lib
 XYSSL_FEATURES	= -DHAVE_LONGLONG -DHAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 -DNO_DES
 
 MYNAME= lxyssl
@@ -18,6 +20,7 @@ VCRT=DLL #comment out if static link VCRT is desired
 MYLIB= $(MYNAME)
 T= $(MYLIB).dll
 OBJS= $(MYLIB).obj
+LUA_MODULES=bufferio.lua ssl.lua security.lua
 
 CC= cl.exe
 LINK= link.exe
@@ -32,14 +35,29 @@ LINK_FLAGS= $(LUA_LIB) $(XYSSL_LIB) kernel32.lib Advapi32.lib /nologo /subsystem
 
 dll:	$T
 
+$(XYSSL_LIB): 
+	cd xyssl-$(XYSSL_VERSION)/library && nmake -f Makefile.win && cd ../..
+
 .c.obj:
 	$(CC) /c /Fo$@ $(CFLAGS) $<
 
-$T:	$(OBJS) 
+$T:	$(XYSSL_LIB) $(OBJS)
 	$(LINK) $(LINK_FLAGS) $(OBJS) $(LUA_LIB) $(XYSSL_LIB)
 !if "$(VCRT)" == "DLL"
 	mt -nologo -outputresource:"$@;2" -manifest "$@.manifest"
 !endif
 
+install: $(T)
+	copy $(T) $(LUA_INSTALL_LIBDIR)\ 
+	copy security.lua $(LUA_INSTALL_DIR)\ 
+	copy ssl.lua $(LUA_INSTALL_DIR)\ 
+	copy bufferio.lua $(LUA_INSTALL_DIR)\ 
+
 clean:
-	del *.obj *.manifest *.lib *.dll *.idb
+	cd xyssl-$(XYSSL_VERSION)/library && nmake -f Makefile.win clean && cd ../..
+	IF EXIST *.exp del *.exp
+	IF EXIST *.obj del *.obj
+	IF EXIST *.manifest del *.manifest
+	IF EXIST *.lib del *.lib
+	IF EXIST *.dll del *.dll
+	IF EXIST *.idb del *.idb
