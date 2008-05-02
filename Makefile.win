@@ -49,9 +49,7 @@ $T:	$(XYSSL_LIB) $(OBJS)
 
 install: $(T)
 	copy $(T) $(LUA_INSTALL_LIBDIR)\ 
-	copy security.lua $(LUA_INSTALL_DIR)\ 
-	copy ssl.lua $(LUA_INSTALL_DIR)\ 
-	copy bufferio.lua $(LUA_INSTALL_DIR)\ 
+	copy lua\*.lua $(LUA_INSTALL_DIR)
 
 clean:
 	cd xyssl-$(XYSSL_VERSION)/library && nmake -f Makefile.win clean && cd ../..
