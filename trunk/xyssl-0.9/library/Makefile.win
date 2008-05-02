@@ -1,0 +1,21 @@
+CFLAGS	= -MD /nologo /W3 /O2 -I../include -D_FILE_OFFSET_BITS=64 -DWIN32 /DNDEBUG /D_MBCS /D_LIB /FD /c
+
+OBJS=	aes.obj		arc4.obj		base64.obj	\
+	bignum.obj	certs.obj		debug.obj		\
+	des.obj		dhm.obj		havege.obj	\
+	md2.obj		md4.obj		md5.obj		\
+	net.obj		padlock.obj	rsa.obj		\
+	sha1.obj		sha2.obj		sha4.obj		\
+	ssl_cli.obj	ssl_srv.obj	ssl_tls.obj	\
+	timing.obj	x509parse.obj
+
+all: static
+
+static: xyssl.lib
+
+xyssl.lib: $(OBJS)
+	lib /out:$@ $(OBJS)
+
+clean:
+  IF EXIST xyssl.lib DEL xyssl.lib
+  IF EXIST *.obj DEL *.obj
