@@ -28,14 +28,14 @@ LUA_MODULES=bufferio.lua ssl.lua security.lua
 
 all: so 
 	
-$(XYSSL_LIB): 
+$(XYSSL_LIB)/libxyssl.a: 
 	cd xyssl-$(XYSSL_VERSION)/library && make all && cd ../..
 
 o:	$(MYLIB).o
 
 so:	$T 
 
-$T:	$(XYSSL_LIB) $(OBJS) 
+$T:	$(OBJS) $(XYSSL_LIB)/libxyssl.a
 	$(CC) -o $@ -shared $(OBJS) $(LIBS) $(LDFLAGS)
 	strip $@
 
@@ -44,8 +44,8 @@ clean:
 	rm -f $(OBJS) $T core core.* a.out 
 
 install: $T
+	cp lua/* $(LUA_INSTALL_DIR)/
 	cp $(T) $(LUA_INSTALL_LIBDIR)/
-	cp $(LUA_MODULES) $(LUA_INSTALL_DIR)/
 
 doc:
 	@echo "$(MYNAME) library:"
