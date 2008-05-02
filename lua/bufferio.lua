@@ -53,7 +53,11 @@ local function receive(self, pattern, part)
         end
         if err and err ~= "timeout" then self.closed = true end
         if size < pattern then 
-            return nil, err, data
+            if not err then
+              return receive(self, pattern, data)
+            else
+              return nil, err , data
+            end
         elseif pattern == 0 and err then
             return nil, err, ""
         else return data end
