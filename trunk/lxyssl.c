@@ -244,7 +244,7 @@ typedef struct {
 
 #ifdef XYSSL_POST_07
 #ifdef XYSSL_POST_08
-#define MYVERSION	"XySSL 0.9 for " LUA_VERSION "/0.3"
+#define MYVERSION	"XySSL 0.9 for " LUA_VERSION "/0.4"
 #else
 #define MYVERSION	"XySSL 0.8 for " LUA_VERSION "/0.2"
 #endif
@@ -2050,8 +2050,8 @@ static const luaL_reg Rm[] = {
 #ifdef USE_LIBEVENT
 	{ "event",  Levent	},
 	{ "ev_select", Levent_select},
-#endif
 	{ "probe",	Lprobe	},
+#endif
 	{ "x509verify",	Lx509verify	},
 	{ "rsasign",	Lrsasign	},
 	{ "rsaverify",	Lrsaverify	},

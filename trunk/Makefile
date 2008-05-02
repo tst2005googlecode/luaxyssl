@@ -1,14 +1,16 @@
-# makefile for aes library for Lua
+# makefile for lxyssl library for Lua
 
 # change these to reflect your Lua installation
 LUA= /usr
+LUA_INSTALL_LIBDIR=/usr/local/lib/lua/5.1
+LUA_INSTALL_DIR=/usr/local/share/lua/5.1
 LUAINC= $(LUA)/include/lua5.1
 LUALIB= $(LUA)/lib
 LUABIN= $(LUA)/bin
 XYSSL_VERSION=0.9
 XYSSL_INC=xyssl-$(XYSSL_VERSION)/include
 XYSSL_LIB=xyssl-$(XYSSL_VERSION)/library
-XYSSL_FEATURES	= -DHAVE_LONGLONG -DHAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 -DNO_DES
+XYSSL_FEATURES	= -DHAVE_LONGLONG -DHAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 
 MYNAME= lxyssl
 # no need to change anything below here
 CFLAGS= $(INCS) $(DEFS) $(WARN) -O2 $G -I$(XYSSL_INC) -DXYSSL=$(XYSSL_VERSION)
@@ -22,24 +24,28 @@ OBJS= $(MYLIB).o
 #LIBS= -lxyssl -levent
 LIBS= -lxyssl 
 CC=gcc
-
+LUA_MODULES=bufferio.lua ssl.lua security.lua
 
 all: so 
 	
-xyssl: 
+$(XYSSL_LIB): 
 	cd xyssl-$(XYSSL_VERSION)/library && make all && cd ../..
 
 o:	$(MYLIB).o
 
-so:	xyssl $T 
+so:	$T 
 
-$T:	$(OBJS) 
+$T:	$(XYSSL_LIB) $(OBJS) 
 	$(CC) -o $@ -shared $(OBJS) $(LIBS) $(LDFLAGS)
 	strip $@
 
 clean:
 	cd xyssl-$(XYSSL_VERSION)/library && make clean && cd ../..
 	rm -f $(OBJS) $T core core.* a.out 
+
+install: $T
+	cp $(T) $(LUA_INSTALL_LIBDIR)/
+	cp $(LUA_MODULES) $(LUA_INSTALL_DIR)/
 
 doc:
 	@echo "$(MYNAME) library:"
