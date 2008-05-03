@@ -7,9 +7,9 @@ LUA_INSTALL_DIR=/usr/local/share/lua/5.1
 LUAINC= $(LUA)/include/lua5.1
 LUALIB= $(LUA)/lib
 LUABIN= $(LUA)/bin
-XYSSL_VERSION=0.9
-XYSSL_INC=xyssl-$(XYSSL_VERSION)/include
-XYSSL_LIB=xyssl-$(XYSSL_VERSION)/library
+XYSSL_VERSION=8
+XYSSL_INC=xyssl-0.$(XYSSL_VERSION)/include
+XYSSL_LIB=xyssl-0.$(XYSSL_VERSION)/library
 XYSSL_FEATURES	= -DHAVE_LONGLONG -DHAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 
 MYNAME= lxyssl
 # no need to change anything below here
@@ -22,14 +22,14 @@ MYLIB= $(MYNAME)
 T= $(MYLIB).so
 OBJS= $(MYLIB).o
 #LIBS= -lxyssl -levent
-LIBS= -lxyssl 
+LIBS= -lxyssl -llua5.1
 CC=gcc
 LUA_MODULES=bufferio.lua ssl.lua security.lua
 
 all: so 
 	
 $(XYSSL_LIB)/libxyssl.a: 
-	cd xyssl-$(XYSSL_VERSION)/library && make all && cd ../..
+	cd xyssl-0.$(XYSSL_VERSION)/library && make all && cd ../..
 
 o:	$(MYLIB).o
 
@@ -40,7 +40,7 @@ $T:	$(OBJS) $(XYSSL_LIB)/libxyssl.a
 	strip $@
 
 clean:
-	cd xyssl-$(XYSSL_VERSION)/library && make clean && cd ../..
+	cd xyssl-0.$(XYSSL_VERSION)/library && make clean && cd ../..
 	rm -f $(OBJS) $T core core.* a.out 
 
 install: $T

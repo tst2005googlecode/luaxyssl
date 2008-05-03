@@ -57,8 +57,8 @@ gyx = security.dh.secret(gy, x, p, g)
 assert(gxy==gyx)
 
 host='www.google.com'
---host='www.yahoo.com'
---host='www.dreamhost.com'
+host='www.yahoo.com'
+host='www.dreamhost.com'
 port=443
 --x:connect(t:getfd())
 --b:settimeout(-1)
@@ -72,7 +72,7 @@ t:connect(host,port)
 b = ssl.stream(t)
 if id then 
     lid = id
-    b:sessinfo(id,master,cipher) 
+    b:sessinfo(id,master,cipher,start) 
 end
 c=0
 --print(msg)
@@ -81,7 +81,7 @@ repeat
     --o,err,c = x:send('GET / HTTP/1.1\r\nhost: www.yahoo.com\r\n\r\n')
 until o==#msg or err ~= "timeout"
 
-print(i, b:peer(), b:name(), b:cipher())
+--print(i, b:peer(), b:name(), b:cipher())
 
 repeat
     d,err,_ = b:receive()
@@ -95,10 +95,10 @@ repeat
     end
 until err == "closed" or err=="nossl"
 if err ~= "nossl" and err ~= "nossl" then b:receive('*a') end
-id,master,cipher = b:sessinfo()
-print(i, id:hex(),master:hex())
+id,master,cipher,start = b:sessinfo()
+print(i, lid and lid:hex(), id:hex(),id==lid)
 if id==lid then print("session reuse", id:hex(), master:hex()) end
-print("cipher used:", b:cipher(), "peer:", b:peer(), "name:", b:name())
+--print("cipher used:", b:cipher(), "peer:", b:peer(), "name:", b:name())
 --b:reset()
 --b:close()
 --t:close()
