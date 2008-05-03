@@ -87,7 +87,7 @@ static int ssl_write_client_hello( ssl_context *ssl )
     n = ssl->session->length;
 
     if( n < 16 || n > 32 || ssl->resume == 0 ||
-        t - ssl->session->start < ssl->timeout )
+        t - ssl->session->start > ssl->timeout )
         n = 0;
 
     *p++ = (unsigned char) n;
@@ -259,7 +259,7 @@ static int ssl_parse_server_hello( ssl_context *ssl )
     /*
      * Check if the session can be resumed
      */
-    if( ssl->resume == 0 ||
+    if( ssl->resume == 0 || n == 0 ||
         ssl->session->cipher != i ||
         ssl->session->length != n ||
         memcmp( ssl->session->id, buf + 39, n ) != 0 )
