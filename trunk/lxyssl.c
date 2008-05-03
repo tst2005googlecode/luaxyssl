@@ -67,8 +67,13 @@ char *default_dhm_G = "4";
 #define ERR_NET_WOULD_BLOCK XYSSL_ERR_NET_TRY_AGAIN
 #define ERR_NET_CONN_RESET XYSSL_ERR_NET_CONN_RESET
 #define ERR_SSL_PEER_CLOSE_NOTIFY XYSSL_ERR_SSL_PEER_CLOSE_NOTIFY
+#if (XYSSL == 7)
+#elif (XYSSL == 8)
+#define XYSSL_POST_07
+#else
 #define XYSSL_POST_07
 #define XYSSL_POST_08
+#endif
 #define ssl_set_rng_func ssl_set_rng
 #define ssl_set_ciphlist ssl_set_ciphers
 #define aes_decrypt(c,i,o) aes_crypt_ecb(c, AES_DECRYPT, i , o)
@@ -1224,6 +1229,7 @@ static int Lsessinfo(lua_State *L)			/** sessinfo(c) */
  int master_len;
  char *master = (char *)luaL_optlstring(L, 3, NULL, &master_len);
  int cipher = (int) luaL_optnumber(L,4,0);
+ time_t start = (time_t) luaL_optnumber(L,5,time(NULL));
  
  #ifndef XYSSL_POST_07
  ssl_context *ssl=&xyssl->ssl;
@@ -1239,13 +1245,15 @@ static int Lsessinfo(lua_State *L)			/** sessinfo(c) */
  lua_pushlstring(L,xyssl->ssn.id, xyssl->ssn.length);
  lua_pushlstring(L,xyssl->ssn.master, sizeof(xyssl->ssn.master));
  lua_pushnumber(L, xyssl->ssn.cipher);
+ lua_pushnumber(L, xyssl->ssn.start);
  if (sessid && master && cipher > 0) {
     xyssl->ssn.cipher = cipher;
     xyssl->ssn.length = id_len < sizeof(xyssl->ssn.id) ? id_len : sizeof(xyssl->ssn.id);
+    xyssl->ssn.start = start;
     memcpy(xyssl->ssn.id, sessid, xyssl->ssn.length);
     memcpy(xyssl->ssn.master, master, master_len < sizeof(xyssl->ssn.master) ? master_len : sizeof(xyssl->ssn.master));
  }
- return 3;
+ return 4;
  #endif
 }
 
