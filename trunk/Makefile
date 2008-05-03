@@ -7,10 +7,10 @@ LUA_INSTALL_DIR=/usr/local/share/lua/5.1
 LUAINC= $(LUA)/include/lua5.1
 LUALIB= $(LUA)/lib
 LUABIN= $(LUA)/bin
-XYSSL_VERSION=8
+XYSSL_VERSION=9
 XYSSL_INC=xyssl-0.$(XYSSL_VERSION)/include
 XYSSL_LIB=xyssl-0.$(XYSSL_VERSION)/library
-XYSSL_FEATURES	= -DHAVE_LONGLONG -DHAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 
+XYSSL_FEATURES	= -DXYSSL_HAVE_LONGLONG -DXYSSL_HAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 -DXYSSL_HAVE_SSE2
 MYNAME= lxyssl
 # no need to change anything below here
 CFLAGS= $(INCS) $(DEFS) $(WARN) -O2 $G -I$(XYSSL_INC) -DXYSSL=$(XYSSL_VERSION)
@@ -29,7 +29,7 @@ LUA_MODULES=bufferio.lua ssl.lua security.lua
 all: so 
 	
 $(XYSSL_LIB)/libxyssl.a: 
-	cd xyssl-0.$(XYSSL_VERSION)/library && make all && cd ../..
+	cd xyssl-0.$(XYSSL_VERSION)/library && make all XYSSL_CFLAGS="$(XYSSL_FEATURES)" && cd ../..
 
 o:	$(MYLIB).o
 

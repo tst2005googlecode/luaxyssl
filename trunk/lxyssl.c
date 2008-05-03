@@ -1855,6 +1855,14 @@ static int Lsettimeout(lua_State *L) /** settimeout(sec) **/
  return 1;
 }
 
+static int Lgettimeout(lua_State *L) /** gettimeout() **/
+{
+ xyssl_context *xyssl=Pget(L,1);
+ ssl_context *ssl = &xyssl->ssl;
+ lua_pushnumber(L,xyssl->timeout);
+ return 1;
+}
+
 static int Ldirty(lua_State *L)		/** dirty() */
 {
  xyssl_context *xyssl=Pget(L,1);
@@ -2019,6 +2027,7 @@ static const luaL_reg R[] =
 	{ "cipher",	Lcipher_info},
 	{ "name",	Lname},
 	{ "settimeout",	Lsettimeout},
+	{ "gettimeout",	Lgettimeout},
 	{ "keycert",Lkeycert},
 	{ "connect",	Lconnect	},
 	{ NULL,		NULL	}

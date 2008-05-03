@@ -38,18 +38,18 @@
 /*
  * Uncomment if the CPU supports SSE2 (IA-32 specific).
  *
- */
 #define XYSSL_HAVE_SSE2
+ */
 
 /*
  * Enable all SSL/TLS debugging messages.
- */
 #define XYSSL_DEBUG_MSG
+ */
 
 /*
  * Enable the checkup functions (*_self_test).
- */
 #define XYSSL_SELF_TEST
+ */
 
 /*
  * Enable the prime-number generation code.
@@ -117,8 +117,8 @@
  *          library/ssl_tls.c
  *
  * This module provides debugging functions.
- */
 #define XYSSL_DEBUG_C
+ */
 
 /*
  * Module:  library/des.c

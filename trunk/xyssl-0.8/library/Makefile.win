@@ -16,6 +16,9 @@ static: xyssl.lib
 xyssl.lib: $(OBJS)
 	lib /out:$@ $(OBJS)
 
+.c.obj:
+	$(CC) $(CFLAGS) $(XYSSL_CFLAGS) $(OFLAGS) -c $<
+
 clean:
 	IF EXIST xyssl.lib DEL xyssl.lib
 	IF EXIST *.idb DEL *.idb
