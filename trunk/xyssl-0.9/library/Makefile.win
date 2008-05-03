@@ -17,5 +17,6 @@ xyssl.lib: $(OBJS)
 	lib /out:$@ $(OBJS)
 
 clean:
-  IF EXIST xyssl.lib DEL xyssl.lib
-  IF EXIST *.obj DEL *.obj
+	IF EXIST xyssl.lib DEL xyssl.lib
+	IF EXIST *.idb DEL *.idb
+	IF EXIST *.obj DEL *.obj
