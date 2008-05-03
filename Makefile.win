@@ -55,7 +55,7 @@ clean:
 	cd xyssl-$(XYSSL_VERSION)/library && nmake -f Makefile.win clean && cd ../..
 	IF EXIST *.exp del *.exp
 	IF EXIST *.obj del *.obj
-	IF EXIST *.manifest del *.manifest
-	IF EXIST *.lib del *.lib
-	IF EXIST *.dll del *.dll
+	IF EXIST lxyssl.dll.manifest del lxyssl.dll.manifest
+	IF EXIST lxyssl.lib del lxyssl.lib
+	IF EXIST lxyssl.dll del lxyssl.dll
 	IF EXIST *.idb del *.idb
