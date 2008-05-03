@@ -38,8 +38,8 @@
 /*
  * Uncomment if the CPU supports SSE2 (IA-32 specific).
  *
-#define XYSSL_HAVE_SSE2
  */
+#define XYSSL_HAVE_SSE2
 
 /*
  * Enable all SSL/TLS debugging messages.

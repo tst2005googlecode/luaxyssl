@@ -42,13 +42,6 @@
     asm( "movl   %edx,   %ecx   " );            \
     asm( "stosl                 " );
 
-#define MULADDC_STOP                            \
-    asm( "movl   %0, %%ebx      " :: "m" (t));  \
-    asm( "movl   %%ecx, %0      " : "=m" (c));  \
-    asm( "movl   %%edi, %0      " : "=m" (d));  \
-    asm( "movl   %%esi, %0      " : "=m" (s) :: \
-    "eax", "ecx", "edx", "esi", "edi" );
-
 #if defined(XYSSL_HAVE_SSE2)
 
 #define MULADDC_HUIT                            \
@@ -113,6 +106,22 @@
     asm( "addl     $32,      %esi     " );      \
     asm( "psrlq    $32,      %mm1     " );      \
     asm( "movd     %mm1,     %ecx     " );
+
+#define MULADDC_STOP                            \
+    asm("emms                          ");      \
+    asm( "movl   %0, %%ebx      " :: "m" (t));  \
+    asm( "movl   %%ecx, %0      " : "=m" (c));  \
+    asm( "movl   %%edi, %0      " : "=m" (d));  \
+    asm( "movl   %%esi, %0      " : "=m" (s) :: \
+    "eax", "ecx", "edx", "esi", "edi" );
+
+#else
+#define MULADDC_STOP                            \
+    asm( "movl   %0, %%ebx      " :: "m" (t));  \
+    asm( "movl   %%ecx, %0      " : "=m" (c));  \
+    asm( "movl   %%edi, %0      " : "=m" (d));  \
+    asm( "movl   %%esi, %0      " : "=m" (s) :: \
+    "eax", "ecx", "edx", "esi", "edi" );
 
 #endif /* SSE2 */
 #endif /* i386 */
@@ -555,11 +564,6 @@
     __asm   mov     ecx, edx                    \
     __asm   stosd
 
-#define MULADDC_STOP                            \
-    __asm   mov     c, ecx                      \
-    __asm   mov     d, edi                      \
-    __asm   mov     s, esi                      \
-
 #if defined(XYSSL_HAVE_SSE2)
 
 #define EMIT __asm _emit
@@ -626,6 +630,21 @@
     EMIT 0x83  EMIT 0xC6  EMIT 0x20             \
     EMIT 0x0F  EMIT 0x73  EMIT 0xD1  EMIT 0x20  \
     EMIT 0x0F  EMIT 0x7E  EMIT 0xC9
+
+
+#define MULADDC_STOP                            \
+    EMIT 0x0F  EMIT 0x77                        \
+    __asm   mov     c, ecx                      \
+    __asm   mov     d, edi                      \
+    __asm   mov     s, esi                      \
+
+#else
+
+#define MULADDC_STOP                            \
+    __asm   mov     c, ecx                      \
+    __asm   mov     d, edi                      \
+    __asm   mov     s, esi                      \
+
 
 #endif /* SSE2 */
 #endif /* MSVC */
