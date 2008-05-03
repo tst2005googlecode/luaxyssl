@@ -54,6 +54,7 @@ function stream(sock, close, auth, keycert, client)
   local x = lxyssl.ssl(client)
   x:keycert(keycert and kercert()) --setup server cert, would use embedded testing one none is given
   x:connect(sock:getfd())
+  x:settimeout() -- default to blocking mode
   return bufferio.wrap(x) -- return a standard bufferio object
 end
 

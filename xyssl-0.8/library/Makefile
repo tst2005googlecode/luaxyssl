@@ -47,8 +47,8 @@ libxyssl.dylib: libxyssl.a
 	$(CC) -dynamiclib -o $@ $(OBJS)
 
 .c.o:
-	echo "  CC    $<"
-	$(CC) $(CFLAGS) $(OFLAGS) -c $<
+	echo "  CC    $(XYSSL_CFLAGS) $<"
+	$(CC) $(CFLAGS) $(XYSSL_CFLAGS) $(OFLAGS) -c $<
 
 clean:
 	rm -f *.o libxyssl.*
