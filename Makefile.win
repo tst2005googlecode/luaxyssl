@@ -1,7 +1,7 @@
 # Windows makefile for xyssl library for Lua
 
 # change these to reflect your Lua installation
-LUA= $(LUA) c:\luajit
+LUA= c:\luajit
 LUA_INC= $(LUA)/include
 LUA_LIB= $(LUA)/lua51.lib
 LUA_INSTALL_LIBDIR=$(LUA)
