@@ -5,6 +5,7 @@ local url = require("socket.url")
 local http = require("socket.http")
 local ltn12 = require("ltn12")
 local setmetatable = setmetatable
+local getmetatable = getmetatable
 local rawget = rawget
 local type=type
 local print=print
@@ -12,8 +13,10 @@ local ipairs=ipairs
 local pairs=pairs
 local tconcat=table.concat
 local tostring=tostring
+local select = select
+local unpack=unpack
 local string=string
-module 'ssl'
+module ('ssl')
 
 local function proto_index(o, k)  
     --local v = o.__proto[k]
@@ -26,6 +29,17 @@ local function prototype(o)
     return setmetatable({__proto=o}, {__index = proto_index })
 end
 
+local function prototypeX(p,o)
+  local o= o or {}
+  o.__proto = p
+  local proto = getmetatable(p)
+  if not proto then proto = p else proto = proto.__index end
+  for k,v in pairs(proto) do
+    if type(v) == 'function' then o[k] = function(self, ...) return v(self.__proto, ...) end end
+  end
+  return o
+end
+
 local function connect(self,...)
   local r, e = self.__proto:connect(...)
   if r then
@@ -33,14 +47,36 @@ local function connect(self,...)
       local x = lxyssl.ssl(0)  -- SSL client object
       local b = bufferio.wrap(x)
       x:connect(self:getfd())
-      x:settimeout()
-      setmetatable(self, b)
+      if copas then x:settimeout(1) else x:settimeout() end
+      --x:settimeout(self.timeout)
+      setmetatable(self,b)
+      self.__ssl = b
     else
-      self.__proto:settimeout()
+      if copas then self.__proto:settimeout(0.5) else self.__proto:settimeout() end
+      --self.__proto:settimeout(self.timeout)
+    end
+    if copas then
+      self.receive = function(self, ...) return copas.receive(self.__ssl or self.__proto, ...) end
+      self.send = function(self, ...) return copas.send(self.__ssl or self.__proto, ...) end
     end
     return 1
   end
   return r, e
+end
+
+local function settimeout(self, t)
+ self.timeout = t
+ return (self.__ssl or self.__proto):settimeout(t)
+end
+
+local function gettimeout(self, t)
+ self.timeout = t
+ return 1
+end
+
+function async(dispatcher)
+  copas = dispatcher
+  http.copas = dispatcher
 end
 
 function stream(sock, close, auth, keycert, client)
@@ -74,19 +110,22 @@ function request(reqt, b)
         }
         reqt.method = "POST"
     end
-    local code, headers, status = socket.skip(1, socket.http.request(reqt))
+    local code, headers, status = socket.skip(1, http.request(reqt))
     return tconcat(t), code, headers, status
   else
     local nreqt = {}
     for k,v in pairs(reqt) do nreqt[k]= v end
     nreqt.create = reqt.create or tcp
-    return socket.http.request(nreqt) 
+    return http.request(nreqt) 
   end
 end
 
 function tcp(scheme)
+  if not copas and scheme ~= "https" then return socket.tcp() end
   local o = prototype(socket.tcp())
   o.connect = connect
+  o.settimeout = settimeout
+  o.gettimeout = gettimeout
   o.ssl = scheme == "https"
   return o
 end

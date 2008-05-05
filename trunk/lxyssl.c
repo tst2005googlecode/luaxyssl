@@ -1304,7 +1304,7 @@ static int Lsend(lua_State *L)		/** send(data) */
      * call
      */
     int tries;
-    for (tries = 0; tries == 0 || (tries < 2 &&  ( xyssl->timeout > 0.0 && Pselect(xyssl->write_fd, 0, 1) > 0)); tries++) {
+    for (tries = 0; tries == 0 || (tries < 100 &&  ( xyssl->timeout > 0.0 && Pselect(xyssl->write_fd, xyssl->timeout, 1) > 0)); tries++) {
         err = ssl_write(ssl, (char *)data + start - 1, size); 
 	#ifndef XYSSL_POST_07
         if (err) {
@@ -1327,7 +1327,7 @@ static int Lsend(lua_State *L)		/** send(data) */
 
  if (err!=0 || sent < size) {
     lua_pushnil(L);
-    if (err == ERR_NET_WOULD_BLOCK ) lua_pushstring(L, "timeout");
+    if (err == ERR_NET_WOULD_BLOCK) lua_pushstring(L, "timeout");
     else if (err == ERR_NET_CONN_RESET) {
         lua_pushstring(L,"closed");
         xyssl->closed = 1;
@@ -1374,16 +1374,18 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
     return 3;
  }
  if (buf) {
+     int start = 0;
      int tries;
-     for (tries = 0; tries == 0 || (tries < 2 &&  ( xyssl->timeout > 0.0 && Pselect(xyssl->read_fd, 0, 0) > 0)); tries++) {
+     for (tries = 0; tries == 0 || (tries < 100 &&  ( xyssl->timeout > 0.0 && Pselect(xyssl->read_fd, xyssl->timeout, 0) > 0)); tries++) {
         len = cnt;
 	#ifndef XYSSL_POST_07
         ret = ssl_read(ssl, buf, &len );
         if (len > 0 || ret != ERR_NET_WOULD_BLOCK) break;
 	#else
-        ret = ssl_read(ssl, buf, len );
-	if (ret > 0) {len = ret; ret = 0; break; }
+        ret = ssl_read(ssl, &buf[start], len - start );
+	      if (ret > 0) {len = ret; start += ret; ret = 0; break;}
         else if (ret != ERR_NET_WOULD_BLOCK) break;
+        if (ret == 0 && start == cnt) break;
 	#endif
      } 
 
