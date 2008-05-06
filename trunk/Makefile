@@ -44,8 +44,8 @@ clean:
 	rm -f $(OBJS) $T core core.* a.out 
 
 install: $T
-	cp lua/* $(LUA_INSTALL_DIR)/
-	cp $(T) $(LUA_INSTALL_LIBDIR)/
+	install lua/* $(LUA_INSTALL_DIR)/
+	install $(T) $(LUA_INSTALL_LIBDIR)/
 
 doc:
 	@echo "$(MYNAME) library:"
