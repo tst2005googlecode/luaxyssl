@@ -18,6 +18,8 @@ local unpack=unpack
 local string=string
 module ('ssl')
 
+async_timeout = 0
+
 local function proto_index(o, k)  
     --local v = o.__proto[k]
     local v = rawget(o, '__proto')[k]
@@ -40,6 +42,14 @@ local function prototypeX(p,o)
   return o
 end
 
+local blank={}
+local function close(self)
+  if (self.__ssl) then self.__ssl:close() end
+  if (self.__proto) then self.__proto:close() end
+  self.__ssl = nil
+  self.__proto = nil
+end
+
 local function connect(self,...)
   local r, e = self.__proto:connect(...)
   if r then
@@ -47,13 +57,15 @@ local function connect(self,...)
       local x = lxyssl.ssl(0)  -- SSL client object
       local b = bufferio.wrap(x)
       x:connect(self:getfd())
-      if copas then x:settimeout(1) else x:settimeout() end
-      --x:settimeout(self.timeout)
+      if copas then x:settimeout(async_timeout) else x:settimeout() end
       setmetatable(self,b)
       self.__ssl = b
+      self.close = close
     else
-      if copas then self.__proto:settimeout(0.5) else self.__proto:settimeout() end
+      local b = bufferio.wrap(self.__proto)
+      if copas then self.__proto:settimeout(async_timeout) else self.__proto:settimeout() end
       --self.__proto:settimeout(self.timeout)
+      --setmetatable(self,b)
     end
     if copas then
       self.receive = function(self, ...) return copas.receive(self.__ssl or self.__proto, ...) end
@@ -126,6 +138,7 @@ function tcp(scheme)
   o.connect = connect
   o.settimeout = settimeout
   o.gettimeout = gettimeout
+  o.close = close
   o.ssl = scheme == "https"
   return o
 end
