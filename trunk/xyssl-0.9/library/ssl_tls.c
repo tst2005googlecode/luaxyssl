@@ -445,6 +445,7 @@ static void ssl_mac_sha1( unsigned char *secret,
 /*
  * Encryption/decryption functions
  */ 
+
 static int ssl_encrypt_buf( ssl_context *ssl )
 {
     int i, padlen;
@@ -508,9 +509,14 @@ static int ssl_encrypt_buf( ssl_context *ssl )
     }
     else
     {
+        static int padding_rotor = 0;
         padlen = ssl->ivlen - ( ssl->out_msglen + 1 ) % ssl->ivlen;
         if( padlen == ssl->ivlen )
             padlen = 0;
+
+        if (padlen) {
+          padlen = padlen + ssl->ivlen*(((++padding_rotor + ssl->out_msglen) % 3));
+        }
 
         for( i = 0; i <= padlen; i++ )
             ssl->out_msg[ssl->out_msglen + i] = (unsigned char) padlen;
@@ -518,8 +524,8 @@ static int ssl_encrypt_buf( ssl_context *ssl )
         ssl->out_msglen += padlen + 1;
 
         SSL_DEBUG_MSG( 3, ( "before encrypt: msglen = %d, "
-                            "including %d bytes of padding",
-                       ssl->out_msglen, padlen + 1 ) );
+                            "including %d bytes of padding, iv %d",
+                       ssl->out_msglen, padlen + 1, ssl->ivlen ) );
 
         SSL_DEBUG_BUF( 4, "before encrypt: output payload",
                        ssl->out_msg, ssl->out_msglen );

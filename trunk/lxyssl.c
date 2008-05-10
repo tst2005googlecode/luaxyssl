@@ -116,6 +116,7 @@ typedef struct {
  x509_cert mycert;
  rsa_context mykey;
  double timeout;
+ int dbg_level;
  int last_send_size;
  char *peer_cn;
  int closed;
@@ -394,6 +395,12 @@ static int Preset(lua_State *L)			/** reset(c) */
  return ret;
 }
 
+static void f_dbg(void *p, int level, char *msg)
+{
+  xyssl_context *xyssl=(xyssl_context *)p;
+
+  if (level <= xyssl->dbg_level) printf("%s", msg);
+}
 
 static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
 {
@@ -1101,7 +1108,7 @@ static int Lprobe(lua_State *L)
  if (ret <= 0) {
     lua_pushnil(L);
     if (errno == EAGAIN || errno == EWOULDBLOCK) lua_pushstring(L,"timeout");
-    else lua_pushstring(L,"closed");
+    else lua_pushstring(L,"closed-probe");
     return 2;
  } else {
     lua_pushboolean(L, 1);
@@ -1285,11 +1292,13 @@ static int Lsend(lua_State *L)		/** send(data) */
 
  if (xyssl->closed) {
     lua_pushnil(L);
-    lua_pushstring(L,"closed");
+    lua_pushstring(L,"closed-send");
     lua_pushnumber(L, 0);
     return 3;
  }
  if (start < 1) start = 1;
+
+ ssl_set_dbg(ssl, f_dbg, xyssl);
 
  #ifndef XYSSL_POST_07
  if (ssl->out_uoff && (size != xyssl->last_send_size || start-1 != ssl->out_uoff)) {
@@ -1329,14 +1338,22 @@ static int Lsend(lua_State *L)		/** send(data) */
     lua_pushnil(L);
     if (err == ERR_NET_WOULD_BLOCK) lua_pushstring(L, "timeout");
     else if (err == ERR_NET_CONN_RESET) {
-        lua_pushstring(L,"closed");
+        lua_pushstring(L,"send-conn-reset");
         xyssl->closed = 1;
     }
     else if (err == ERR_SSL_PEER_CLOSE_NOTIFY) {
-        lua_pushstring(L,"nossl");
+        lua_pushstring(L,"send-ssl-peer-close");
         xyssl->closed = 1;
         }
+    #if 0
     else lua_pushstring(L, "handshake");
+    #else
+    else {
+      char buf[64]; 
+      sprintf(buf,"send-handshake-%0x", err & 0xffff);
+      lua_pushstring(L, buf);
+      }
+    #endif
     #ifndef XYSSL_POST_07
     lua_pushnumber(L, start > sent ? start-1 : sent);
     #else
@@ -1373,6 +1390,7 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
     lua_pushstring(L, "");
     return 3;
  }
+ ssl_set_dbg(ssl, f_dbg, xyssl);
  if (buf) {
      int start = 0;
      int tries;
@@ -1401,13 +1419,21 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
         if (ret == ERR_NET_WOULD_BLOCK ) lua_pushstring(L, "timeout");
         else if (ret == ERR_NET_CONN_RESET) {
             xyssl->closed = 1;
-            lua_pushstring(L,"closed");
+            lua_pushstring(L,"receive-conn-reset");
         }
         else if (ret == ERR_SSL_PEER_CLOSE_NOTIFY) {
-            lua_pushstring(L,"nossl");
+            lua_pushstring(L,"receive-ssl-peer-close");
             xyssl->closed = 1;
             }
+        #if 0
         else lua_pushstring(L,"handshake");
+        #else
+        else {
+          char buf[64];
+          sprintf(buf,"receive-handshake-%0x", ret & 0xffff);
+          lua_pushstring(L, buf);
+        }
+        #endif
         
         luaL_buffinit(L, &B);
         if (part_cnt) luaL_addlstring(&B, part, part_cnt);
@@ -1857,6 +1883,16 @@ static int Lsettimeout(lua_State *L) /** settimeout(sec) **/
  return 1;
 }
 
+static int Ldebug(lua_State *L) /** debug(level) **/
+{
+ xyssl_context *xyssl=Pget(L,1);
+ int level = luaL_optnumber(L, 2, 0);
+ int old_level = xyssl->dbg_level;
+ xyssl->dbg_level = level;
+ lua_pushnumber(L,old_level);
+ return 1;
+}
+
 static int Lgettimeout(lua_State *L) /** gettimeout() **/
 {
  xyssl_context *xyssl=Pget(L,1);
@@ -2028,6 +2064,7 @@ static const luaL_reg R[] =
 	{ "peer",	Lpeer},
 	{ "cipher",	Lcipher_info},
 	{ "name",	Lname},
+	{ "debug",	Ldebug},
 	{ "settimeout",	Lsettimeout},
 	{ "gettimeout",	Lgettimeout},
 	{ "keycert",Lkeycert},

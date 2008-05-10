@@ -15,6 +15,7 @@ local tconcat=table.concat
 local tostring=tostring
 local select = select
 local unpack=unpack
+local assert=assert
 local string=string
 module ('ssl')
 
@@ -44,19 +45,31 @@ end
 
 local blank={}
 local function close(self)
-  if (self.__ssl) then self.__ssl:close() end
-  if (self.__proto) then self.__proto:close() end
+  if (self.__ssl) then 
+    if copas and copas.release then copas.release(self.__ssl) end
+    self.__ssl:close() 
+  end
   self.__ssl = nil
+  if (self.__proto) then 
+    if copas and copas.release then copas.release(self.__proto) end
+    self.__proto:close() 
+  end
   self.__proto = nil
 end
 
 local function connect(self,...)
-  local r, e = self.__proto:connect(...)
+  local r, e = copas and copas.connect(self.__proto, ...) or self.__proto:connect(...)
   if r then
+    self.__proto:setoption('tcp-nodelay',true)
     if self.ssl then
       local x = lxyssl.ssl(0)  -- SSL client object
-      local b = bufferio.wrap(x)
+      --x:debug(0)
       x:connect(self:getfd())
+      if copas and not async_handshake then 
+        x:settimeout() 
+        x:handshake()
+      end
+      local b = bufferio.wrap(x)
       if copas then x:settimeout(async_timeout) else x:settimeout() end
       setmetatable(self,b)
       self.__ssl = b
@@ -68,8 +81,16 @@ local function connect(self,...)
       --setmetatable(self,b)
     end
     if copas then
-      self.receive = function(self, ...) return copas.receive(self.__ssl or self.__proto, ...) end
-      self.send = function(self, ...) return copas.send(self.__ssl or self.__proto, ...) end
+      self.receive = function(self, ...) 
+        local skt = self.__ssl or self.__proto
+        if skt then return copas.receive(skt,...)
+        else return nil, "closed", ""  end
+      end
+      self.send = function(self, ...) 
+        local skt = self.__ssl or self.__proto
+        if skt then return copas.send(skt,...)
+        else return nil, "closed", ""  end
+      end
     end
     return 1
   end
