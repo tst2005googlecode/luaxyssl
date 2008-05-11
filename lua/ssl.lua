@@ -63,9 +63,9 @@ local function connect(self,...)
     self.__proto:setoption('tcp-nodelay',true)
     if self.ssl then
       local x = lxyssl.ssl(0)  -- SSL client object
-      --x:debug(0)
+      if debug then x:debug(debug or 0) end
       x:connect(self:getfd())
-      if copas and not async_handshake then 
+      if copas and async_handshake == false then 
         x:settimeout() 
         x:handshake()
       end

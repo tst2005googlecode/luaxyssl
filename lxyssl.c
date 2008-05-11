@@ -125,6 +125,7 @@ typedef struct {
  int write_fd;
  char *dhm_P;
  char *dhm_G;
+ int blocked_for;
  #ifdef XYSSL_POST_07
  ssl_session ssn;
  #endif
@@ -177,6 +178,22 @@ int malloc_sidtable = 0;
  * to store and retrieve the session information.
  */
 ssl_session s_list[SSL_SESSION_TBL_LEN];
+
+static int read_fn(void *context, unsigned char *buf, int size)
+{
+  xyssl_context *xyssl = (xyssl_context *)context;
+  int r = net_recv(&xyssl->read_fd, buf, size);
+  if (r == ERR_NET_WOULD_BLOCK) { xyssl->blocked_for = 1;}
+  return r;
+}
+
+static int write_fn(void *context, unsigned char *data, int size)
+{
+  xyssl_context *xyssl = (xyssl_context *)context;
+  int r = net_send(&xyssl->write_fd, data, size);
+  if (r == ERR_NET_WOULD_BLOCK) { xyssl->blocked_for = 2;}
+  return r;
+}
 
 static int default_get_session( ssl_context *ssl )
 {
@@ -399,7 +416,7 @@ static void f_dbg(void *p, int level, char *msg)
 {
   xyssl_context *xyssl=(xyssl_context *)p;
 
-  if (level <= xyssl->dbg_level) printf("%s", msg);
+  if (level <= xyssl->dbg_level) printf("%lx:%s", p,msg);
 }
 
 static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
@@ -428,7 +445,11 @@ static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
  #ifndef XYSSL_POST_07
  ssl_set_io_files( ssl, read_fd, write_fd );
  #else
+ #if 0
  ssl_set_bio(ssl, net_recv, &xyssl->read_fd, net_send, &xyssl->write_fd);
+ #else
+ ssl_set_bio(ssl, read_fn, xyssl, write_fn, xyssl);
+ #endif
  #endif
  return 0;
 
@@ -1359,6 +1380,9 @@ static int Lsend(lua_State *L)		/** send(data) */
     #else
     lua_pushnumber(L, start + sent - 1);
     #endif
+    if (err == ERR_NET_WOULD_BLOCK && xyssl->blocked_for > 0) {
+      lua_pushstring(L, xyssl->blocked_for == 1 ? "read" : "write");
+    }
  } else {
     lua_pushnumber(L, sent);
     lua_pushnil(L);
@@ -1441,6 +1465,9 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
         if (len) luaL_addlstring(&B, buf, len);
 	#endif
         luaL_pushresult(&B);
+        if (ret == ERR_NET_WOULD_BLOCK && xyssl->blocked_for > 0) {
+          lua_pushstring(L, xyssl->blocked_for == 1 ? "read" : "write");
+        }
     }
     free(buf);
  } else {
@@ -1901,6 +1928,14 @@ static int Lgettimeout(lua_State *L) /** gettimeout() **/
  return 1;
 }
 
+static int Lgetssl(lua_State *L) /** getssl() **/
+{
+ xyssl_context *xyssl=Pget(L,1);
+ ssl_context *ssl = &xyssl->ssl;
+ lua_pushnumber(L,(unsigned long)ssl);
+ return 1;
+}
+
 static int Ldirty(lua_State *L)		/** dirty() */
 {
  xyssl_context *xyssl=Pget(L,1);
@@ -2067,6 +2102,7 @@ static const luaL_reg R[] =
 	{ "debug",	Ldebug},
 	{ "settimeout",	Lsettimeout},
 	{ "gettimeout",	Lgettimeout},
+	{ "getssl",	Lgetssl},
 	{ "keycert",Lkeycert},
 	{ "connect",	Lconnect	},
 	{ NULL,		NULL	}
