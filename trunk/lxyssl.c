@@ -1319,7 +1319,9 @@ static int Lsend(lua_State *L)		/** send(data) */
  }
  if (start < 1) start = 1;
 
- ssl_set_dbg(ssl, f_dbg, xyssl);
+ #if 0
+ if (xyssl->dbg_level > 0) ssl_set_dbg(ssl, f_dbg, xyssl);
+ #endif
 
  #ifndef XYSSL_POST_07
  if (ssl->out_uoff && (size != xyssl->last_send_size || start-1 != ssl->out_uoff)) {
@@ -1370,10 +1372,14 @@ static int Lsend(lua_State *L)		/** send(data) */
     else lua_pushstring(L, "handshake");
     #else
     else {
-      char buf[64]; 
-      sprintf(buf,"send-handshake-%0x", err & 0xffff);
-      lua_pushstring(L, buf);
+      char buf[64];
+      if (err == XYSSL_ERR_NET_SEND_FAILED && errno > 0) {
+        sprintf(buf,"receive-handshake(%d)", errno);
+      } else {
+        sprintf(buf,"receive-handshake(0x%0x)", err & 0xffff);
       }
+      lua_pushstring(L, buf);
+    }
     #endif
     #ifndef XYSSL_POST_07
     lua_pushnumber(L, start > sent ? start-1 : sent);
@@ -1414,7 +1420,9 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
     lua_pushstring(L, "");
     return 3;
  }
- ssl_set_dbg(ssl, f_dbg, xyssl);
+ #if 0
+ if (xyssl->dbg_level > 0) ssl_set_dbg(ssl, f_dbg, xyssl);
+ #endif
  if (buf) {
      int start = 0;
      int tries;
@@ -1454,7 +1462,11 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
         #else
         else {
           char buf[64];
-          sprintf(buf,"receive-handshake-%0x", ret & 0xffff);
+          if (ret == XYSSL_ERR_NET_RECV_FAILED && errno > 0) {
+            sprintf(buf,"receive-handshake(%d)", errno);
+          } else {
+            sprintf(buf,"receive-handshake(0x%0x)", ret & 0xffff);
+          }
           lua_pushstring(L, buf);
         }
         #endif
@@ -1913,9 +1925,12 @@ static int Lsettimeout(lua_State *L) /** settimeout(sec) **/
 static int Ldebug(lua_State *L) /** debug(level) **/
 {
  xyssl_context *xyssl=Pget(L,1);
+ ssl_context *ssl = &xyssl->ssl;
  int level = luaL_optnumber(L, 2, 0);
  int old_level = xyssl->dbg_level;
  xyssl->dbg_level = level;
+ if (xyssl->dbg_level > 0) ssl_set_dbg(ssl, f_dbg, xyssl);
+ else ssl_set_dbg(ssl, NULL, NULL);
  lua_pushnumber(L,old_level);
  return 1;
 }

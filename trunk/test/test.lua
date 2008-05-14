@@ -58,6 +58,7 @@ assert(gxy==gyx)
 
 host='www.google.com'
 host='www.yahoo.com'
+host='www.microsoft.com'
 --host='www.dreamhost.com'
 port=443
 --x:connect(t:getfd())
