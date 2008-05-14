@@ -296,6 +296,9 @@ int net_recv( void *ctx, unsigned char *buf, int len )
         if( errno == EINTR )
             return( XYSSL_ERR_NET_TRY_AGAIN );
 #endif
+#if defined(WIN32) || defined(_WIN32_WCE)
+        errno = WSAGetLastError();
+#endif
 
         return( XYSSL_ERR_NET_RECV_FAILED );
     }
@@ -324,6 +327,9 @@ int net_send( void *ctx, unsigned char *buf, int len )
 
         if( errno == EINTR )
             return( XYSSL_ERR_NET_TRY_AGAIN );
+#endif
+#if defined(WIN32) || defined(_WIN32_WCE)
+        errno = WSAGetLastError();
 #endif
 
         return( XYSSL_ERR_NET_SEND_FAILED );

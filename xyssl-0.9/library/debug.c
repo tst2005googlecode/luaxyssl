@@ -102,8 +102,11 @@ void debug_print_buf( ssl_context *ssl, int level,
 
         if( i % 16 == 0 )
         {
-            if( i > 0 )
-                ssl->f_dbg( ssl->p_dbg, level, "\n" );
+            if( i > 0 ) {
+                snprintf(str+16*3,maxlen - 16*3, "\n");
+                str[maxlen] = '\0';
+                ssl->f_dbg( ssl->p_dbg, level, str );
+                }
 
             snprintf( str, maxlen, "%s(%04d): %04x: ", file, line, i );
 
@@ -111,14 +114,19 @@ void debug_print_buf( ssl_context *ssl, int level,
             ssl->f_dbg( ssl->p_dbg, level, str );
         }
 
-        snprintf( str, maxlen, " %02x", (unsigned int) buf[i] );
+        snprintf( str+(i%16)*3, maxlen-(i%16)*3, " %02x", (unsigned int) buf[i] );
 
+        /*
         str[maxlen] = '\0';
         ssl->f_dbg( ssl->p_dbg, level, str );
+        */
     }
 
-    if( len > 0 )
-        ssl->f_dbg( ssl->p_dbg, level, "\n" );
+    if (len > 0) {
+      snprintf(str+(i%16 ? i%16 : 16)*3,maxlen - (i%16 ? i%16 : 16)*3, "\n");
+      str[maxlen] = '\0';
+      ssl->f_dbg( ssl->p_dbg, level, str );
+      }
 }
 
 void debug_print_mpi( ssl_context *ssl, int level,
