@@ -20,6 +20,7 @@ local string=string
 module ('ssl')
 
 async_timeout = 0
+debug=0
 
 local function proto_index(o, k)  
     --local v = o.__proto[k]
@@ -44,7 +45,14 @@ local function prototypeX(p,o)
 end
 
 local blank={}
+
 local function close(self)
+  if copas and copas.release then 
+    copas.release(self.__wrapped) 
+  end
+  --if self.__wrapped then self.__wrapped:close() end
+  --self.__wrapped = nil
+
   if (self.__ssl) then 
     if copas and copas.release then copas.release(self.__ssl) end
     self.__ssl:close() 
@@ -58,39 +66,31 @@ local function close(self)
 end
 
 local function connect(self,...)
+  self.__proto:setoption('tcp-nodelay',true)
   local r, e = copas and copas.connect(self.__proto, ...) or self.__proto:connect(...)
   if r then
-    self.__proto:setoption('tcp-nodelay',true)
     if self.ssl then
       local x = lxyssl.ssl(0)  -- SSL client object
-      if debug then x:debug(debug or 0) end
+      if debug then x:debug(debug) end
       x:connect(self:getfd())
-      if copas and async_handshake == false then 
-        x:settimeout() 
+      if copas and async_handshake==false then 
+        x:settimeout(-1) 
         x:handshake()
       end
-      local b = bufferio.wrap(x)
+      local b = copas and copas.wrap(x) or bufferio.wrap(x)
       if copas then x:settimeout(async_timeout) else x:settimeout() end
-      setmetatable(self,b)
-      self.__ssl = b
-      self.close = close
+      self.__wrapped = b
+      self.__ssl = x
+      self.send = function(self, ...) return self.__wrapped:send(...) end
+      self.receive = function(self, ...) return self.__wrapped:receive(...) end
     else
-      local b = bufferio.wrap(self.__proto)
       if copas then self.__proto:settimeout(async_timeout) else self.__proto:settimeout() end
-      --self.__proto:settimeout(self.timeout)
-      --setmetatable(self,b)
+      local b = copas and copas.wrap(self.__proto) or self.__proto
+      self.__wrapped = b
     end
     if copas then
-      self.receive = function(self, ...) 
-        local skt = self.__ssl or self.__proto
-        if skt then return copas.receive(skt,...)
-        else return nil, "closed", ""  end
-      end
-      self.send = function(self, ...) 
-        local skt = self.__ssl or self.__proto
-        if skt then return copas.send(skt,...)
-        else return nil, "closed", ""  end
-      end
+      self.send = function(self, ...) return self.__wrapped:send(...) end
+      self.receive = function(self, ...) return self.__wrapped:receive(...) end
     end
     return 1
   end
@@ -109,7 +109,6 @@ end
 
 function async(dispatcher)
   copas = dispatcher
-  http.copas = dispatcher
 end
 
 function stream(sock, close, auth, keycert, client)
@@ -123,8 +122,13 @@ function stream(sock, close, auth, keycert, client)
   local x = lxyssl.ssl(client)
   x:keycert(keycert and kercert()) --setup server cert, would use embedded testing one none is given
   x:connect(sock:getfd())
-  x:settimeout() -- default to blocking mode
-  return bufferio.wrap(x) -- return a standard bufferio object
+  if copas then
+    x:settimeout(0) -- copas needs non-blocking
+    return copas.wrap(x) -- return a standard copas wrapped object
+  else
+    x:settimeout() -- default to blocking mode
+    return bufferio.wrap(x) -- return a standard bufferio object
+  end
 end
 
 function request(reqt, b)
