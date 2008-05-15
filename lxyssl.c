@@ -165,6 +165,9 @@ libevent_context libevent_handle;
 int session_table_idx = -1;
 lua_State *Current_LVM = NULL;
 
+/* chain of known commonly trusted Root CA certs */
+x509_cert trustedCA;
+
 #ifndef SSL_SESSION_TBL_LEN
 #define SSL_SESSION_TBL_LEN 256
 #endif
@@ -1141,6 +1144,29 @@ static int Lprobe(lua_State *L)
  #endif
 }
 
+static int LaddTrustedCA(lua_State *L)
+{
+ int ret; 
+ int ca_len;
+ const char *ca = luaL_checklstring(L, 1, &ca_len);
+ 
+ ret = x509_add_certs( &trustedCA, (unsigned char *) ca, ca_len);
+ if (ret) {
+    lua_pushnil(L);
+    lua_pushstring(L,"bad ca");
+    lua_pushnumber(L, ret);
+    return 3;
+ }
+ lua_pushnumber(L, 1);
+ return 1;
+}
+
+static int LclearTrustedCA(lua_State *L)
+{
+  x509_free(&trustedCA);
+  return 0;
+}
+
 static int Lssl(lua_State *L)
 {
  int ret;
@@ -1494,10 +1520,10 @@ static int Lgc(lua_State *L)		/** garbage collect */
 {
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
- x509_cert *cacert = &xyssl->cacert;
  x509_cert *mycert= &xyssl->mycert;
  rsa_context *rsa = &xyssl->mykey;
  int ret = Pclose(L);
+ x509_cert *cacert = &xyssl->cacert;
 
  x509_free_cert( cacert );
  x509_free_cert( mycert );
@@ -1520,63 +1546,77 @@ static int Lgc(lua_State *L)		/** garbage collect */
  return 0;
 }
 
-static int Lkeycert(lua_State *L)		/** set the key/cert to use */
+static int LsessionCA(lua_State *L) /** setca(ca) **/
 {
- int    top = lua_gettop(L);
-
- xyssl_context *xyssl=Pget(L,1);
- ssl_context *ssl=&xyssl->ssl;
- x509_cert *cacert = &xyssl->cacert;
- x509_cert *mycert= &xyssl->mycert;
- rsa_context *rsa = &xyssl->mykey;
+ int top = lua_gettop(L);
  int ca_len;
- const char *ca = luaL_optlstring(L, 2, test_ca_crt , &ca_len);
- int cert_len;
- const char *cert = luaL_optlstring(L, 3, ssl->endpoint ? test_srv_crt: NULL, &cert_len);
- int key_len;
- const char *key = luaL_optlstring(L, 4, ssl->endpoint ? test_srv_key: NULL, &key_len);
- int pwd_len;
- const char *pwd = luaL_optlstring(L, 5, NULL, &pwd_len);
  int ret;
+ xyssl_context *xyssl=Pget(L,1);
+ x509_cert *cacert = &xyssl->cacert;
+ ssl_context *ssl=&xyssl->ssl;
+ const char *ca = luaL_checklstring(L, 2, &ca_len);
 
  ret = x509_add_certs( cacert, (unsigned char *) ca, ca_len);
  if (ret) {
     lua_pushnil(L);
     lua_pushstring(L,"bad ca");
     lua_pushnumber(L, ret);
-    goto exit;
+    return 3;
  }
- if (cert) ret = x509_add_certs( mycert, (unsigned char *) cert,cert_len );
- if (ret) {
+ ssl_set_ca_chain( ssl, cacert, xyssl->peer_cn );
+ lua_pushnumber(L,1);
+ return 1;
+}
+
+static int Lkeycert(lua_State *L)		/** set the key/cert to use */
+{
+ int    top = lua_gettop(L);
+
+ xyssl_context *xyssl=Pget(L,1);
+ ssl_context *ssl=&xyssl->ssl;
+ x509_cert *mycert= &xyssl->mycert;
+ rsa_context *rsa = &xyssl->mykey;
+ int cert_len;
+ int key_len;
+ int pwd_len;
+ int ret;
+ const char *cert = luaL_optlstring(L, 2, ssl->endpoint ? test_srv_crt: NULL, &cert_len);
+ const char *key = luaL_optlstring(L, 3, ssl->endpoint ? test_srv_key: NULL, &key_len);
+ const char *pwd = luaL_optlstring(L, 4, NULL, &pwd_len);
+
+ if (cert) {
+  ret = x509_add_certs( mycert, (unsigned char *) cert,cert_len );
+  if (ret) {
     lua_pushnil(L);
     lua_pushstring(L,"bad cert");
     lua_pushnumber(L, ret);
-    goto free_ca;
+    goto exit;
+  }
  }
- if (key) ret = x509_parse_key(rsa, (unsigned char *) key, key_len, (unsigned char *)pwd, pwd_len);
- if (ret) {
+
+ if (key) {
+  ret = x509_parse_key(rsa, (unsigned char *) key, key_len, (unsigned char *)pwd, pwd_len);
+  if (ret) {
     lua_pushnil(L);
     lua_pushstring(L,"bad rsa key/pwd");
     lua_pushnumber(L, ret);
     goto free_key;
+  }
  }
 
- ssl_set_ca_chain( ssl, cacert, xyssl->peer_cn );
- if (cert) ssl_set_rsa_cert( ssl, mycert, rsa );
- lua_pushnumber(L, 1);
- goto exit;
+ if (cert && key) {
+  ssl_set_rsa_cert( ssl, mycert, rsa );
+  lua_pushnumber(L, 1);
+  goto exit;
+ }
  
 free_key:
  rsa_free( rsa );
 
 free_cert:
  x509_free_cert( mycert );
-
-free_ca:
- x509_free_cert( cacert );
  
 exit:
-
  return lua_gettop(L) - top;
 }
 
@@ -1600,6 +1640,7 @@ static int Lauthmode(lua_State *L)		/** authmode(level) */
 {
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
+ x509_cert *cacert = &xyssl->cacert;
  int verification = luaL_optinteger(L,2,0);
  int peer_len;
  const char *expected_peer= luaL_optlstring(L, 3, NULL, &peer_len);
@@ -1612,7 +1653,7 @@ static int Lauthmode(lua_State *L)		/** authmode(level) */
  } else {
     xyssl->peer_cn = NULL;
  }
- if (ssl->ca_chain) ssl_set_ca_chain( ssl, ssl->ca_chain, xyssl->peer_cn );
+ ssl_set_ca_chain( ssl, cacert->next ? cacert :&trustedCA, xyssl->peer_cn );
 
  return 0;
 }
@@ -1628,8 +1669,12 @@ static int Lhandshake(lua_State *L)		/** handshake() */
  if (1 || xyssl->timeout <= 0.0 || (ret = Pselect(xyssl->write_fd, xyssl->timeout, 1)) > 0) {
      ret = ssl_handshake( ssl );
  } 
+ if (ret < 0) {
+  lua_pushnil(L);
+  lua_pushnumber(L, ret);
+  return 2;
+  }
  lua_pushnumber(L, ret);
-
  return 1;
 }
 
@@ -1639,8 +1684,12 @@ static int Lverify(lua_State *L)		/** verify() */
  ssl_context *ssl=&xyssl->ssl;
  int ret = ssl_get_verify_result ( ssl );
 
+ if (ret) {
+  lua_pushnil(L);
+  lua_pushnumber(L, ret);
+  return 2;
+ }
  lua_pushnumber(L, ret);
-
  return 1;
 }
 
@@ -1664,7 +1713,7 @@ static int Lx509verify(lua_State *L)		/** x509verify(ca, crt) */
     lua_pushnil(L);
     lua_pushstring(L,"bad ca cert");
     lua_pushnumber(L, ret);
-    goto exit;
+    goto free_ca;
  }
 
  ret = x509_add_certs( &cert, (unsigned char *) crt, crt_size);
@@ -1672,7 +1721,7 @@ static int Lx509verify(lua_State *L)		/** x509verify(ca, crt) */
     lua_pushnil(L);
     lua_pushstring(L,"bad ca cert");
     lua_pushnumber(L, ret);
-    goto free_ca;
+    goto free_cert;
  }
 
  ret = x509parse_verify( &cert, &ca, NULL, &flag);
@@ -1684,12 +1733,11 @@ static int Lx509verify(lua_State *L)		/** x509verify(ca, crt) */
     lua_pushboolean(L, 1);
  }
 
+free_cert:
  x509_free_cert( &cert );
 
 free_ca:
  x509_free_cert( &ca );
-
-exit:
 
  return lua_gettop(L) - top;
 }
@@ -1712,11 +1760,10 @@ static int Lrsaverify(lua_State *L)		/** rsaverify(data, sig, [crt]) */
     lua_pushnil(L);
     lua_pushstring(L,"bad cert");
     lua_pushnumber(L, ret);
-    goto exit;
+    goto free_cert;
  }
 
- #if 1
- ret = rsa_pkcs1_verify( &cert.rsa, RSA_PUBLIC, RSA_SHA1, data_size, (unsigned char *)data, (unsigned char *)sig);
+ ret = rsa_pkcs1_verify( &cert.rsa, RSA_PUBLIC, RSA_RAW, data_size, (unsigned char *)data, (unsigned char *)sig);
  if (ret) {
     lua_pushnil(L);
     lua_pushstring(L,"bad signature");
@@ -1724,10 +1771,9 @@ static int Lrsaverify(lua_State *L)		/** rsaverify(data, sig, [crt]) */
  } else {
     lua_pushboolean(L, 1);
  }
- x509_free_cert( &cert );
-#endif 
 
-exit:
+free_cert:
+ x509_free_cert( &cert );
 
  return lua_gettop(L) - top;
 }
@@ -1745,12 +1791,11 @@ static int Lrsaencrypt(lua_State *L)		/** rsaencrypt(data, [crt]) */
 
  memset(&cert,0,sizeof(cert));
  ret = x509_add_certs( &cert, (unsigned char *) crt, crt_size);
- ret = x509_add_certs( &cert, (unsigned char *) crt, crt_size);
  if (ret) {
     lua_pushnil(L);
     lua_pushstring(L,"bad cert");
     lua_pushnumber(L, ret);
-    goto exit;
+    goto free_cert;
  }
 
  ret = rsa_pkcs1_encrypt( &cert.rsa, RSA_PUBLIC, data_size, (unsigned char *)data, (unsigned char *)m);
@@ -1762,9 +1807,8 @@ static int Lrsaencrypt(lua_State *L)		/** rsaencrypt(data, [crt]) */
     lua_pushlstring(L, m, cert.rsa.len);
  }
  
+free_cert:
  x509_free_cert( &cert );
-
-exit:
 
  return lua_gettop(L) - top;
 }
@@ -1788,10 +1832,10 @@ static int Lrsasign(lua_State *L)		/** rsasign(data, [key, [pw]]) */
     lua_pushnil(L);
     lua_pushstring(L,"fail to read private key ");
     lua_pushnumber(L, ret);
-    goto exit;
+    goto free_key;
  }
 
- ret = rsa_pkcs1_sign( &rsa, RSA_PRIVATE, RSA_SHA1, data_size, (unsigned char *)data, (unsigned char *)sig);
+ ret = rsa_pkcs1_sign( &rsa, RSA_PRIVATE, RSA_RAW, data_size, (unsigned char *)data, (unsigned char *)sig);
  if (ret) {
     lua_pushnil(L);
     lua_pushstring(L,"fail to sign");
@@ -1800,9 +1844,8 @@ static int Lrsasign(lua_State *L)		/** rsasign(data, [key, [pw]]) */
     lua_pushlstring(L, sig, rsa.len);
  }
  
+free_key:
  rsa_free( &rsa );
-
-exit:
 
  return lua_gettop(L) - top;
 }
@@ -1827,7 +1870,7 @@ static int Lrsadecrypt(lua_State *L)		/** rsadecrypt(data, [key, [pw]]) */
     lua_pushnil(L);
     lua_pushstring(L,"fail to read private key ");
     lua_pushnumber(L, ret);
-    goto exit;
+    goto free_key;
  }
 
  ret = rsa_pkcs1_decrypt( &rsa, RSA_PRIVATE, &out_len, (unsigned char *)data, (unsigned char *)m);
@@ -1839,9 +1882,8 @@ static int Lrsadecrypt(lua_State *L)		/** rsadecrypt(data, [key, [pw]]) */
     lua_pushlstring(L, m, out_len);
  }
  
+free_key:
  rsa_free( &rsa );
-
-exit:
 
  return lua_gettop(L) - top;
 }
@@ -2120,6 +2162,7 @@ static const luaL_reg R[] =
 	{ "getssl",	Lgetssl},
 	{ "keycert",Lkeycert},
 	{ "connect",	Lconnect	},
+	{ "setca",	LsessionCA	},
 	{ NULL,		NULL	}
 };
 
@@ -2154,6 +2197,8 @@ static const luaL_reg Rrc4[] =
 
 static const luaL_reg Rm[] = {
 	{ "ssl",	Lssl	},
+	{ "addca",	LaddTrustedCA	},
+	{ "clearca",	LclearTrustedCA},
 #ifdef USE_LIBEVENT
 	{ "event",  Levent	},
 	{ "ev_select", Levent_select},
@@ -2190,6 +2235,7 @@ LUA_API int luaopen_lxyssl(lua_State *L)
  int i;
 
  havege_init( &hs );
+ memset(&trustedCA,0,sizeof(x509_cert));
 
  for (i=0; i < sizeof(random_bits); i++) random_bits[i] = havege_rand(&hs);
  arc4_setup(&arc4_stream, random_bits, sizeof(random_bits));
