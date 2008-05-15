@@ -1,7 +1,7 @@
 require'socket'
 require'lxyssl'
 require'bufferio'
-require 'copas' 
+copas = require 'copas' 
 format = string.format
 
 SESSION_LIVE = 2400
@@ -63,10 +63,17 @@ local function H404(obj,verb, h,uri,proto,read,write)
 end
 
 local dispatch={
-    ['GET'] = function(obj,verb, h,uri,proto,read,write)
-        local data= format("%s %s %s\r\n", verb, uri, ("a"):rep(3))
+    ['GET'] = function(obj,verb, h,uri,proto,read,write, host_info)
+        local data= format("%s %s %s\r\n", verb, uri, ("a"):rep(10000))
         local alive = keep_alive(proto, h['connection'])
-        write(format("%s 200 OK\r\n",proto))
+        local host = (h['host'] or host_info.ip):match('[^:]+')
+        if host_info.scheme == "https" then
+          data= format("%s %s %s\r\n", verb, uri, ("s"):rep(10000))
+          write(format("%s 302 Moved\r\n",proto))
+          write(string.format("Location: http://%s:8080%s\r\n", host, uri))
+        else
+          write(format("%s 200 OK\r\n",proto))
+        end
         local too_old = os.difftime(os.time(), obj.birthday) >= SESSION_LIVE or obj.freq >= SESSION_ROUNDS 
         if alive and not too_old then write(alive) end
         if too_old and not proto:find('1.0') then write("Connection: close\r\n") end
@@ -75,7 +82,7 @@ local dispatch={
         write("\r\n")
         write(data)
     end,
-    ['PUT'] = function(obj,verb, h,uri,proto,read,write)
+    ['PUT'] = function(obj,verb, h,uri,proto,read,write,sceme)
         local data
         local alive = keep_alive(proto, h['connection'])
         if h['content-length'] then
@@ -128,6 +135,7 @@ local function handler(skt,is_ssl)
     if not port then return end
     x:keycert() --setup server cert, would use embedded testing one none is given
     x:connect(skt:getfd())
+    x:debug(0)
     
     --b:settimeout(-1)
     local function read(...) return copas.receive(b,...) end 
@@ -155,9 +163,9 @@ local function handler(skt,is_ssl)
         local f = dispatch[verb:upper()]
         if not f then f = dispatch['H501'] end
         if f then 
-            f(obj,verb, h, resource, proto, read, write) 
+            f(obj,verb, h, resource, proto, read, write, {scheme=is_ssl and 'https' or 'http', ip=ip, port=port}) 
         else
-            H501(obj,verb, h, resource, proto, read, write) 
+            H501(obj,verb, h, resource, proto, read, write,{scheme=is_ssl and 'https' or 'http', ip=ip, port=port}) 
         end
         if (not proto:find("1.0") or h['connection'] == 'keep-alive') 
             and os.difftime(os.time(), obj.birthday) < SESSION_LIVE 
