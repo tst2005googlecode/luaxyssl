@@ -3,6 +3,10 @@ require'socket'
 require'lxyssl'
 require'security'
 require'ssl'
+ca={}
+for k in io.popen('dir /etc/ssl/certs/*.pem'):lines() do table.insert(ca,io.open(k):read('*a')) end
+assert(lxyssl.addca(table.concat(ca)))
+
 string.hex = function(x)
     local t={}
     for c in x:gmatch('(.)') do t[#t+1]=string.format("%02x", c:byte()) end
@@ -45,7 +49,7 @@ assert(b:decrypt((a:encrypt(data))) == data)
 assert(security.rand(256) ~= security.rand(256))
 
 a=security.rsa.sign('abc')
-assert(security.rsa.verify('abc', a))
+assert(security.rsa.verify('abc',a))
 
 a=security.rsa.encrypt('abc')
 assert(security.rsa.decrypt(a)=='abc')
@@ -57,7 +61,7 @@ gyx = security.dh.secret(gy, x, p, g)
 assert(gxy==gyx)
 
 host='www.google.com'
-host='www.yahoo.com'
+--host='www.yahoo.com'
 host='www.microsoft.com'
 --host='www.dreamhost.com'
 port=443
@@ -71,6 +75,10 @@ t=socket.tcp()
 t:connect(host,port)
 --b:connect(t:getfd())
 b = ssl.stream(t)
+--b:keycert()
+b:authmode(1,host)
+--b:debug(2)
+--b:debug(0)
 if id then 
     lid = id
     b:sessinfo(id,master,cipher,start) 
@@ -82,20 +90,22 @@ repeat
     --o,err,c = x:send('GET / HTTP/1.1\r\nhost: www.yahoo.com\r\n\r\n')
 until o==#msg or err ~= "timeout"
 
---print(i, b:peer(), b:name(), b:cipher())
+print(i, b:verify(), b:peer(), b:name(), b:cipher())
 
 repeat
     d,err,_ = b:receive()
     --d,err,i = x:receive(1000)
     if not err then 
-        print(d)
+        print(d,#d)
         if d=='' then 
             break 
         end
     else
     end
-until err == "closed" or err=="nossl"
-if err ~= "nossl" and err ~= "nossl" then b:receive('*a') end
+until err == "closed" or err=="nossl" 
+if err ~= "nossl" and err ~= "nossl" then 
+  print(b:receive('*a'))
+end
 id,master,cipher,start = b:sessinfo()
 print(i, lid and lid:hex(), id:hex(),id==lid)
 if id==lid then print("session reuse", id:hex(), master:hex()) end
