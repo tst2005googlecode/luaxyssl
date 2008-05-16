@@ -50,9 +50,8 @@ local function close(self)
   if copas and copas.release then 
     copas.release(self.__wrapped) 
   end
-  --if self.__wrapped then self.__wrapped:close() end
-  --self.__wrapped = nil
-
+  if self.__wrapped then self.__wrapped:close() end
+  self.__wrapped = nil
   if (self.__ssl) then 
     if copas and copas.release then copas.release(self.__ssl) end
     self.__ssl:close() 

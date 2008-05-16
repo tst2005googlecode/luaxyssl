@@ -1,7 +1,7 @@
 require'socket'
 require'lxyssl'
 require'bufferio'
-copas = require 'copas2' 
+copas = require 'copas1' 
 format = string.format
 
 SESSION_LIVE = 2400
