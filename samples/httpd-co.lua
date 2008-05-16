@@ -1,13 +1,13 @@
 require'socket'
 require'lxyssl'
 require'bufferio'
-copas = require 'copas' 
+copas = require 'copas2' 
 format = string.format
 
 SESSION_LIVE = 2400
 SESSION_ROUNDS = 1000
 MAX_SESSIONS = 10000
-MAX_SSL = 100
+MAX_SSL = 1000
 --copas.WATCH_DOG_TIMEOUT = 600
 
 string.hex = function(x)

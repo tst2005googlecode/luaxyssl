@@ -39,6 +39,7 @@
 #include "xyssl/aes.h"
 #include "xyssl/arc4.h"
 #include "xyssl/dhm.h"
+#include "xyssl/debug.h"
 
 /*
  * Computing a safe DH-1024 prime takes ages, so it's faster
@@ -185,7 +186,15 @@ ssl_session s_list[SSL_SESSION_TBL_LEN];
 static int read_fn(void *context, unsigned char *buf, int size)
 {
   xyssl_context *xyssl = (xyssl_context *)context;
+  ssl_context *ssl = &xyssl->ssl;
+  char text[128];
   int r = net_recv(&xyssl->read_fd, buf, size);
+#ifdef XYSSL_DEBUG_MSG 
+  if (xyssl->dbg_level > 0) {
+    sprintf(text,"buffer after net_recv(fd:%d)", xyssl->read_fd);
+    SSL_DEBUG_BUF( 4, text, buf, size);
+  }
+#endif
   if (r == ERR_NET_WOULD_BLOCK) { xyssl->blocked_for = 1;}
   return r;
 }
@@ -193,7 +202,16 @@ static int read_fn(void *context, unsigned char *buf, int size)
 static int write_fn(void *context, unsigned char *data, int size)
 {
   xyssl_context *xyssl = (xyssl_context *)context;
-  int r = net_send(&xyssl->write_fd, data, size);
+  ssl_context *ssl = &xyssl->ssl;
+  char text[128];
+  int r;
+#ifdef XYSSL_DEBUG_MSG 
+  if (xyssl->dbg_level > 0) {
+    sprintf(text,"buffer before net_send(fd:%d)", xyssl->write_fd);
+    SSL_DEBUG_BUF( 4, text, data, size);
+  }
+#endif
+  r = net_send(&xyssl->write_fd, data, size);
   if (r == ERR_NET_WOULD_BLOCK) { xyssl->blocked_for = 2;}
   return r;
 }
@@ -419,7 +437,7 @@ static void f_dbg(void *p, int level, char *msg)
 {
   xyssl_context *xyssl=(xyssl_context *)p;
 
-  if (level <= xyssl->dbg_level) printf("%lx:%s", p,msg);
+  if (level <= xyssl->dbg_level) printf("%lx(%d,%d):%s", p,xyssl->read_fd,xyssl->write_fd,msg);
 }
 
 static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
@@ -1257,6 +1275,8 @@ static int Pclose(lua_State *L)
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
 
+ if (!xyssl->closed) return 0;
+
  ssl_close_notify( ssl );
  xyssl->closed = 1;
  #ifndef _WIN32
@@ -1624,9 +1644,13 @@ static int Lgetfd(lua_State *L)		/** getfd */
 {
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
+ if (xyssl->read_fd != xyssl->write_fd) {
+  lua_pushnumber(L, xyssl->read_fd);
+  lua_pushnumber(L, xyssl->write_fd);
+  return 2;
+ }
  lua_pushnumber(L, xyssl->read_fd);
- lua_pushnumber(L, xyssl->write_fd);
- return 2;
+ return 1;
 }
 
 static int Lsetfd(lua_State *L)		/** setfd(r[,w]) */
