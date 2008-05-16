@@ -27,9 +27,9 @@ CC= cl.exe
 LINK= link.exe
 
 !if "$(VCRT)" == "DLL"
-CFLAGS=/nologo /MD /O2 /W3 /I "$(LUA_INC)" /I "$(XYSSL_INC)" /D "_CRT_SECURE_NO_DEPRECATE" /LD /D "NDEBUG" /D "_MBCS" /D "LUA_BUILD_AS_DLL" /FD /DXYSSL=$(XYSSL_VERSION)
+CFLAGS=/nologo /MD /O2 /W3 /I "$(LUA_INC)" /I "$(XYSSL_INC)" /D "_CRT_SECURE_NO_DEPRECATE" /LD /D "NDEBUG" /D "_MBCS" /D "LUA_BUILD_AS_DLL" /FD /DXYSSL=$(XYSSL_VERSION) $(XYSSL_FEATURES)
 !else
-CFLAGS=/nologo /MT /O2 /W3 /I "$(LUA_INC)" /I "$(XYSSL_INC)" /D "_CRT_SECURE_NO_DEPRECATE" /LD /D "NDEBUG" /D "_MBCS" /D "LUA_BUILD_AS_DLL" /FD /DXYSSL=$(XYSSL_VERSION)
+CFLAGS=/nologo /MT /O2 /W3 /I "$(LUA_INC)" /I "$(XYSSL_INC)" /D "_CRT_SECURE_NO_DEPRECATE" /LD /D "NDEBUG" /D "_MBCS" /D "LUA_BUILD_AS_DLL" /FD /DXYSSL=$(XYSSL_VERSION) $(XYSSL_FEATURES)
 !endif
 
 LINK_FLAGS= $(LUA_LIB) $(XYSSL_LIB) kernel32.lib Advapi32.lib /nologo /subsystem:windows /dll /incremental:no /machine:I386 /out:$T /implib:$(MYLIB).lib
