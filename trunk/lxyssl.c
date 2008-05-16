@@ -1424,6 +1424,7 @@ static int Lsend(lua_State *L)		/** send(data) */
       } else {
         sprintf(buf,"receive-handshake(0x%0x)", err & 0xffff);
       }
+      xyssl->closed = 1;
       lua_pushstring(L, buf);
     }
     #endif
@@ -1508,6 +1509,7 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
         #else
         else {
           char buf[64];
+          xyssl->closed = 1;
           if (ret == XYSSL_ERR_NET_RECV_FAILED && errno > 0) {
             sprintf(buf,"receive-handshake(%d)", errno);
           } else {
