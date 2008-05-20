@@ -4,11 +4,12 @@ require'bufferio'
 copas = require 'copas1' 
 format = string.format
 
-SESSION_LIVE = 2400
-SESSION_ROUNDS = 1000
+SESSION_LIVE = 120
+SESSION_ROUNDS = 100
 MAX_SESSIONS = 10000
-MAX_SSL = 1000
---copas.WATCH_DOG_TIMEOUT = 600
+MAX_SSL = 10000
+--copas.WATCHDOG_TIMEOUT = 600
+allow_keep_alive = false
 
 string.hex = function(x)
     local t={}
@@ -24,7 +25,7 @@ local function proto_index(o, k)
 end
 
 local function prototype(o)
-    return setmetatable({__proto=o}, {__index = proto_index })
+    return setmetatable({__proto=o}, {__index = proto_index ,__mode="v"})
 end
 
 local function header(l)
@@ -33,8 +34,10 @@ local function header(l)
 end
 
 local function keep_alive(proto, c)
-    if proto:find('1.0') and c == 'keep-alive' then
+    if proto:find('1.0') and c == 'keep-alive' and allow_keep_alive then
         return "Connection: Keep-Alive\r\n"
+    elseif proto:find('1.1') and not allow_keep_alive then
+        return "Connection: close\r\n"
     end
 end
 
@@ -45,6 +48,16 @@ local function H501(obj,verb, h,uri,proto,read,write)
     if alive then write(alive) end
     write("Content-Type: plain/text\r\n")
     local r  = format("%s %s\r\n", verb, uri)
+    write(format("Content-Length: %i\r\n", #r))
+    write("\r\n")
+    write(r)
+end
+
+local function H500(obj,verb, h,uri,proto,read,write)
+    local r = "Server not available, try again later"
+    write(format("%s 500 Server not available\r\n",proto or "HTTP/1.0"))
+    write("Connection: close\r\n")
+    write("Content-Type: plain/text\r\n")
     write(format("Content-Length: %i\r\n", #r))
     write("\r\n")
     write(r)
@@ -116,7 +129,7 @@ local dispatch={
 }
 
 local sessions=setmetatable({},{__mode="kv"})
-local function handler(skt,is_ssl)
+local function handler(skt,is_ssl,not_available)
     skt:setoption('tcp-nodelay', true)
     local ip,port = skt:getsockname()
 
@@ -129,18 +142,19 @@ local function handler(skt,is_ssl)
     sessions[id] = {cipher=cipher, master=master}
     end
 
-    --local b = bufferio.wrap(port == 4433 and x or skt, true, port ~= 4433)
-    local b = is_ssl and bufferio.wrap(x) or prototype(skt)
-
     if not port then return end
+    --local b = bufferio.wrap(port == 4433 and x or skt, true, port ~= 4433)
+    local b = is_ssl and copas.wrap(x) or copas.wrap(skt)
+
     x:keycert() --setup server cert, would use embedded testing one none is given
     x:connect(skt:getfd())
     x:debug(0)
     
     --b:settimeout(-1)
-    local function read(...) return copas.receive(b,...) end 
-    local function write(...) return copas.send( b,...) end 
+    local function read(...) return b:receive(...) end 
+    local function write(...) return b:send(...) end 
     local obj = b
+
     
     obj.birthday = os.time()
     obj.freq = 1
@@ -153,6 +167,10 @@ local function handler(skt,is_ssl)
         local data
         local verb, resource, proto = action:match("^%s*([^%s]*)%s+([^%s]*)%s+(.*)$")
         if not verb then break end
+        if not_available then 
+          H500(obj,verb, h, resource, proto, read, write,{scheme=is_ssl and 'https' or 'http', ip=ip, port=port}) 
+          return
+        end
         repeat
             local l,err,chunk = read()
             if l and #l > 0 then
@@ -167,7 +185,7 @@ local function handler(skt,is_ssl)
         else
             H501(obj,verb, h, resource, proto, read, write,{scheme=is_ssl and 'https' or 'http', ip=ip, port=port}) 
         end
-        if (not proto:find("1.0") or h['connection'] == 'keep-alive') 
+        if allow_keep_alive and (not proto:find("1.0") or h['connection'] == 'keep-alive') 
             and os.difftime(os.time(), obj.birthday) < SESSION_LIVE 
             and obj.freq < SESSION_ROUNDS then 
             action, err, chunk = read()
@@ -175,6 +193,7 @@ local function handler(skt,is_ssl)
         else action = nil end
     end
     obj:close() 
+    if copas.release then copas.release(obj) end
     --x:close()
 end
 
@@ -183,17 +202,21 @@ local ssl_connections = 0
 local connections = 0
 local function server(p,ssl)
     local function http_handler(skt)
-        if ssl_connections > MAX_SESSIONS then return end
+        local h500 = connections >= MAX_SESSIONS 
+        if h500 then  print(connections, ssl_connections) end
         connections = connections + 1 
-        local x =  {handler(skt)}
+        local x =  {handler(skt, false, h500)}
         connections = connections - 1 
         return unpack(x)
     end
     local function https_handler(skt)
-        if ssl_connections > MAX_SSL then return end
+        local h500 = connections >= MAX_SESSIONS or ssl_connections >= MAX_SSL
+        if h500 then  print(connections, ssl_connections) end
         ssl_connections = ssl_connections + 1
-        local x =  {handler(skt,1)}
+        connections = connections + 1
+        local x =  {handler(skt,1, h500)}
         ssl_connections = ssl_connections - 1
+        connections = connections - 1
         return unpack(x)
     end
 

@@ -175,6 +175,7 @@ x509_cert trustedCA;
 unsigned char default_session_table[SSL_SESSION_TBL_LEN];
 unsigned char *session_table = default_session_table;
 int malloc_sidtable = 0;
+int ssl_objects = 0;
 
 #ifdef XYSSL_POST_07
 /*
@@ -1150,7 +1151,7 @@ static int Lprobe(lua_State *L)
  if (ret <= 0) {
     lua_pushnil(L);
     if (errno == EAGAIN || errno == EWOULDBLOCK) lua_pushstring(L,"timeout");
-    else lua_pushstring(L,"closed-probe");
+    else lua_pushstring(L,"closed");
     return 2;
  } else {
     lua_pushboolean(L, 1);
@@ -1183,6 +1184,12 @@ static int LclearTrustedCA(lua_State *L)
 {
   x509_free(&trustedCA);
   return 0;
+}
+
+static int Lssl_state(lua_State *L)
+{
+  lua_pushnumber(L, ssl_objects);
+  return 1;
 }
 
 static int Lssl(lua_State *L)
@@ -1246,6 +1253,7 @@ static int Lssl(lua_State *L)
     if (xyssl->dhm_P) strcpy(xyssl->dhm_P, dhm_P);
     if (xyssl->dhm_G) strcpy(xyssl->dhm_G, dhm_G);
  }
+ ssl_objects+=1;
  return 1;
 }
 
@@ -1275,9 +1283,14 @@ static int Pclose(lua_State *L)
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
 
- if (!xyssl->closed) return 0;
+ if (xyssl->closed) return 0;
 
+ #if 0
+ /* don't send notify as it serves little purpose but
+  * can be dangerous if the upper layer don't know what
+  * they are doin't like same fd being reused */
  ssl_close_notify( ssl );
+ #endif
  xyssl->closed = 1;
  #ifndef _WIN32
  if (xyssl->re_open) {
@@ -1359,7 +1372,7 @@ static int Lsend(lua_State *L)		/** send(data) */
 
  if (xyssl->closed) {
     lua_pushnil(L);
-    lua_pushstring(L,"closed-send");
+    lua_pushstring(L,"closed");
     lua_pushnumber(L, 0);
     return 3;
  }
@@ -1407,11 +1420,11 @@ static int Lsend(lua_State *L)		/** send(data) */
     lua_pushnil(L);
     if (err == ERR_NET_WOULD_BLOCK) lua_pushstring(L, "timeout");
     else if (err == ERR_NET_CONN_RESET) {
-        lua_pushstring(L,"send-conn-reset");
+        lua_pushstring(L,"closed");
         xyssl->closed = 1;
     }
     else if (err == ERR_SSL_PEER_CLOSE_NOTIFY) {
-        lua_pushstring(L,"send-ssl-peer-close");
+        lua_pushstring(L,"closed");
         xyssl->closed = 1;
         }
     #if 0
@@ -1420,9 +1433,15 @@ static int Lsend(lua_State *L)		/** send(data) */
     else {
       char buf[64];
       if (err == XYSSL_ERR_NET_SEND_FAILED && errno > 0) {
+        lua_pushstring(L,"closed");
+        #if 0
         sprintf(buf,"receive-handshake(%d)", errno);
+        #endif
       } else {
+        lua_pushstring(L,"closed");
+        #if 0
         sprintf(buf,"receive-handshake(0x%0x)", err & 0xffff);
+        #endif
       }
       xyssl->closed = 1;
       lua_pushstring(L, buf);
@@ -1463,7 +1482,7 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
  if (xyssl->closed) {
     if (buf) free(buf);
     lua_pushnil(L);
-    lua_pushstring(L,"nossl");
+    lua_pushstring(L,"closed");
     lua_pushstring(L, "");
     return 3;
  }
@@ -1498,10 +1517,10 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
         if (ret == ERR_NET_WOULD_BLOCK ) lua_pushstring(L, "timeout");
         else if (ret == ERR_NET_CONN_RESET) {
             xyssl->closed = 1;
-            lua_pushstring(L,"receive-conn-reset");
+            lua_pushstring(L,"closed");
         }
         else if (ret == ERR_SSL_PEER_CLOSE_NOTIFY) {
-            lua_pushstring(L,"receive-ssl-peer-close");
+            lua_pushstring(L,"closed");
             xyssl->closed = 1;
             }
         #if 0
@@ -1511,9 +1530,15 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
           char buf[64];
           xyssl->closed = 1;
           if (ret == XYSSL_ERR_NET_RECV_FAILED && errno > 0) {
+            lua_pushstring(L,"closed");
+            #if 0
             sprintf(buf,"receive-handshake(%d)", errno);
+            #endif
           } else {
+            lua_pushstring(L,"closed");
+            #if 0
             sprintf(buf,"receive-handshake(0x%0x)", ret & 0xffff);
+            #endif
           }
           lua_pushstring(L, buf);
         }
@@ -1565,6 +1590,7 @@ static int Lgc(lua_State *L)		/** garbage collect */
     xyssl->dhm_G = NULL;
  }
 
+ ssl_objects-=1;
  return 0;
 }
 
@@ -2222,6 +2248,7 @@ static const luaL_reg Rrc4[] =
 };
 
 static const luaL_reg Rm[] = {
+	{ "state",	Lssl_state	},
 	{ "ssl",	Lssl	},
 	{ "addca",	LaddTrustedCA	},
 	{ "clearca",	LclearTrustedCA},

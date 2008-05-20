@@ -23,8 +23,9 @@ async_timeout = 0
 debug=0
 
 local function proto_index(o, k)  
-    --local v = o.__proto[k]
-    local v = rawget(o, '__proto')[k]
+    local p = rawget(o, '__proto')
+    if not p then return end
+    local v = p[k]
     if type(v) == "function" then return function(x,...) return v(o.__proto,...) end 
     else return v end
 end
@@ -49,51 +50,44 @@ local blank={}
 local function close(self)
   if copas and copas.release then 
     copas.release(self.__wrapped) 
+    copas.release(self.__ssl) 
+    copas.release(self.__proto) 
   end
-  if self.__wrapped then self.__wrapped:close() end
-  self.__wrapped = nil
-  if (self.__ssl) then 
-    if copas and copas.release then copas.release(self.__ssl) end
-    self.__ssl:close() 
-  end
-  self.__ssl = nil
-  if (self.__proto) then 
-    if copas and copas.release then copas.release(self.__proto) end
-    self.__proto:close() 
-  end
-  self.__proto = nil
 end
 
 local function connect(self,...)
   self.__proto:setoption('tcp-nodelay',true)
   local r, e = copas and copas.connect(self.__proto, ...) or self.__proto:connect(...)
-  if r then
+  if not e then
     if self.ssl then
       local x = lxyssl.ssl(0)  -- SSL client object
+      local b = bufferio.wrap(x)
       if debug then x:debug(debug) end
       x:connect(self:getfd())
-      if copas and async_handshake==false then 
-        x:settimeout(-1) 
-        x:handshake()
-      end
-      local b = copas and copas.wrap(x) or bufferio.wrap(x)
-      if copas then x:settimeout(async_timeout) else x:settimeout() end
-      self.__wrapped = b
       self.__ssl = x
-      self.send = function(self, ...) return self.__wrapped:send(...) end
-      self.receive = function(self, ...) return self.__wrapped:receive(...) end
-    else
-      if copas then self.__proto:settimeout(async_timeout) else self.__proto:settimeout() end
-      local b = copas and copas.wrap(self.__proto) or self.__proto
       self.__wrapped = b
-    end
-    if copas then
-      self.send = function(self, ...) return self.__wrapped:send(...) end
-      self.receive = function(self, ...) return self.__wrapped:receive(...) end
+      if copas then 
+        x:settimeout(async_timeout) 
+        self.send = function(self, ...) return copas.send(self.__wrapped,...) end
+        self.receive = function(self, ...) return copas.receive(self.__wrapped,...) end
+      else 
+        x:settimeout() 
+        self.send = function(self, ...) return b:send(...) end
+        self.receive = function(self, ...) return b:receive(...) end
+      end
+    else
+      if copas then
+        self.__proto:settimeout(async_timeout) 
+        --if true then return copas.wrap(self.__proto) end
+        self.send = function(self, ...) return copas.send(self.__proto,...) end
+        self.receive = function(self, ...) return copas.receive(self.__proto,...) end
+      else
+        self.__proto:settimeout() 
+      end
     end
     return 1
   end
-  return r, e
+  return r, e or "connect refused",""
 end
 
 local function settimeout(self, t)
