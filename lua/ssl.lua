@@ -56,6 +56,7 @@ local function close(self)
 end
 
 local function connect(self,...)
+  if not self.__proto then return nil, self._last_err end
   self.__proto:setoption('tcp-nodelay',true)
   local r, e = copas and copas.connect(self.__proto, ...) or self.__proto:connect(...)
   if not e then
@@ -91,6 +92,7 @@ local function connect(self,...)
 end
 
 local function settimeout(self, t)
+ if not self.__proto then return nil, self._last_err end
  self.timeout = t
  return (self.__ssl or self.__proto):settimeout(t)
 end
@@ -151,12 +153,14 @@ function request(reqt, b)
 end
 
 function tcp(scheme)
-  if not copas and scheme ~= "https" then return socket.tcp() end
-  local o = prototype(socket.tcp())
+  local s,e = socket.tcp()
+  if not copas and scheme ~= "https" then return s end
+  local o = prototype(s)
   o.connect = connect
   o.settimeout = settimeout
   o.gettimeout = gettimeout
   o.close = close
   o.ssl = scheme == "https"
+  o._last_err = e
   return o
 end
