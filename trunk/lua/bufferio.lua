@@ -127,6 +127,7 @@ local function send(self, data, i, j)
         return i + written - 1
     else
         if msg and msg ~= "timeout" then self.closed = true end 
+        if type(e) ~= "number" then e = 0; q = nil end
         return nil, msg, i + e - 1,q
     end
 end
