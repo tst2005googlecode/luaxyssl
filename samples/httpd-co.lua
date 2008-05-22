@@ -194,7 +194,7 @@ local function handler(skt,is_ssl,not_available)
     end
     obj:close() 
     if copas.release then copas.release(obj) end
-    --x:close()
+    skt:close()
 end
 
 local e

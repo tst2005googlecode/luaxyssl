@@ -53,6 +53,8 @@ local function close(self)
     copas.release(self.__ssl) 
     copas.release(self.__proto) 
   end
+  if self.__ssl then self.__ssl:close() end
+  if self.__proto then self.__proto:close() end
 end
 
 local function connect(self,...)
