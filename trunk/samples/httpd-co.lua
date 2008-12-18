@@ -1,13 +1,14 @@
 require'socket'
 require'lxyssl'
+require'ssl'
 require'bufferio'
+require'coxpcall'
 copas = require 'copas1' 
 format = string.format
-
 SESSION_LIVE = 120
 SESSION_ROUNDS = 100
-MAX_SESSIONS = 10000
-MAX_SSL = 10000
+MAX_SESSIONS = 1200
+MAX_SSL = 1200
 --copas.WATCHDOG_TIMEOUT = 600
 allow_keep_alive = false
 
@@ -132,8 +133,13 @@ local sessions=setmetatable({},{__mode="kv"})
 local function handler(skt,is_ssl,not_available)
     skt:setoption('tcp-nodelay', true)
     local ip,port = skt:getsockname()
+    local x 
 
-    local x = lxyssl.ssl(1) --1 is ssl server nil or 0 is client
+    if not port then return end
+
+    if is_ssl then x = ssl.stream(skt, {server=true}) end
+    --local x = lxyssl.ssl(1) --1 is ssl server nil or 0 is client
+    --[[
     getmetatable(x).get_session = function(o, id, cipher)
     local s = sessions[id]
     if s and s.cipher == cipher then return s.master end
@@ -141,16 +147,13 @@ local function handler(skt,is_ssl,not_available)
     getmetatable(x).set_session = function(o, id, cipher, master)
     sessions[id] = {cipher=cipher, master=master}
     end
-
-    if not port then return end
+    x:certkey() --setup server cert, would use embedded testing one none is given
+    x:connect(skt:getfd())
+    x:debug(0)
+]]
     --local b = bufferio.wrap(port == 4433 and x or skt, true, port ~= 4433)
     local b = is_ssl and copas.wrap(x) or copas.wrap(skt)
 
-    x:keycert() --setup server cert, would use embedded testing one none is given
-    x:connect(skt:getfd())
-    x:debug(0)
-    
-    --b:settimeout(-1)
     local function read(...) return b:receive(...) end 
     local function write(...) return b:send(...) end 
     local obj = b
@@ -192,7 +195,7 @@ local function handler(skt,is_ssl,not_available)
             obj.freq = obj.freq + 1
         else action = nil end
     end
-    obj:close() 
+    --obj:close() 
     if copas.release then copas.release(obj) end
     skt:close()
 end
@@ -203,21 +206,21 @@ local connections = 0
 local function server(p,ssl)
     local function http_handler(skt)
         local h500 = connections >= MAX_SESSIONS 
-        if h500 then  print(connections, ssl_connections) end
+        if h500 then print(connections, ssl_connections) end
         connections = connections + 1 
-        local x =  {handler(skt, false, h500)}
+        local x =  {copcall(handler(skt, false, h500))}
         connections = connections - 1 
-        return unpack(x)
+        --return unpack(x)
     end
     local function https_handler(skt)
         local h500 = connections >= MAX_SESSIONS or ssl_connections >= MAX_SSL
-        if h500 then  print(connections, ssl_connections) end
+        if h500 then print(connections, ssl_connections) end
         ssl_connections = ssl_connections + 1
         connections = connections + 1
-        local x =  {handler(skt,1, h500)}
+        local x =  {copcall(handler(skt,1, h500))}
         ssl_connections = ssl_connections - 1
         connections = connections - 1
-        return unpack(x)
+        --return unpack(x)
     end
 
     local tcp = socket.bind("*",tonumber(p))

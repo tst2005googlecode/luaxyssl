@@ -20,7 +20,8 @@ local string=string
 module ('ssl')
 
 async_timeout = 0
-debug=0
+trace=0
+untrusted_ssl=false
 
 local function proto_index(o, k)  
     local p = rawget(o, '__proto')
@@ -31,7 +32,7 @@ local function proto_index(o, k)
 end
 
 local function prototype(o)
-    return setmetatable({__proto=o}, {__index = proto_index })
+    return setmetatable({__proto=o}, {__index = proto_index, __tostring=function(self) return "ssl ojbect:" .. tostring(self._proto) end })
 end
 
 local function prototypeX(p,o)
@@ -46,6 +47,23 @@ local function prototypeX(p,o)
 end
 
 local blank={}
+local sessions=setmetatable({},{__mode="v"}) --index by session id, weak value effectively a cache
+local custom_session_manager=setmetatable({},{__mode="k"}) --indexed by xyssl object
+
+do
+  local m = getmetatable(lxyssl.ssl())
+  m.get_session = function(x, id, cipher)
+    local sm = custom_session_manager[x]
+    if sm and sm.get_session then return sm.get_session(x, id, cipher) end
+    local s = sessions[id]
+    if s and s.cipher == cipher then return s.master end
+  end
+  m.set_session = function(x, id, cipher, master)
+    local sm = custom_session_manager[x]
+    if sm and sm.set_session then return sm.set_session(x, id, cipher, master) end
+    sessions[id] = {cipher=cipher, master=master}
+  end
+end
 
 local function close(self)
   if copas and copas.release then 
@@ -63,10 +81,12 @@ local function connect(self,...)
   local r, e = copas and copas.connect(self.__proto, ...) or self.__proto:connect(...)
   if not e then
     if self.ssl then
-      local x = lxyssl.ssl(0)  -- SSL client object
+      local x = lxyssl.ssl()  -- SSL client object by default
       local b = bufferio.wrap(x)
-      if debug then x:debug(debug) end
+      local host = select(1,...)
+      if trace then x:debug(trace) end
       x:connect(self:getfd())
+      x:authmode(x:hasca() and not untrusted_ssl and 2 or 1, host) --by default, verify
       self.__ssl = x
       self.__wrapped = b
       if copas then 
@@ -108,24 +128,41 @@ function async(dispatcher)
   copas = dispatcher
 end
 
-function stream(sock, close, auth, keycert, client)
+local function set_session_manager(o, get_session, set_session)
+  custom_session_manager[o.__ssl] = {get_session=get_session, set_session=set_session}
+end
+
+local function stream_close(stream)
+  if stream.__ssl then stream.__ssl:close() end
+  if stream.__skt then stream.__skt:close() end
+end
+
+function stream(sock, params)
+  params = params or {}
   --this function should be used to turn normal socket into ssl stream
   --for the possibility of being subsituted with alternative library(like luaclr which is C# only)
   --sock is a connected socket
-  --close a flag indicate if the underlying socket should be closed if the ssl stream is closed
-  --auth  is a callback function to determine if security policy is allowed
-  --keycert is a callback function to retrieve the x509 key use(if there is multiple)
-  --client indicate if this stream is for client or server(as the handshaking is different)
-  local x = lxyssl.ssl(client)
-  x:keycert(keycert and kercert()) --setup server cert, would use embedded testing one none is given
+  --params is table with the following key
+    --close a flag indicate if the underlying socket should be closed if the ssl stream is closed
+    --auth  is a callback function to determine if security policy is allowed
+    --certkey is a callback function to retrieve the x509 cert/key to use(if there is multiple)
+    --server  indicate if this stream is for client or server(as the handshaking is different)
+    --host remove host for certificate verification
+    --ca CAs in PEM format
+  local x = lxyssl.ssl(params.server)
+  local y = bufferio.wrap(x) --provided operation that is luasocket/lua io compatable
+  if params.server or params.certkey then 
+    --setup cert either provided or embedded if this is a server(a must)
+    x:certkey(params.certkey and params.certkey()) 
+  end 
+  if params.ca then x:setca(params.ca) end
+  if (params.host and x:hasca()) or params.verify then x:authmode(params.verify or 2, params.host) end
   x:connect(sock:getfd())
-  if copas then
-    x:settimeout(0) -- copas needs non-blocking
-    return copas.wrap(x) -- return a standard copas wrapped object
-  else
-    x:settimeout() -- default to blocking mode
-    return bufferio.wrap(x) -- return a standard bufferio object
-  end
+  y.__skt = sock -- lock down the socket object, just in case the wrapper doesn't
+  y.__ssl = x -- lock down the lxyssl object, just in case the wrapper does't
+  y.close = stream_close -- override the close
+  y.set_session_manager = set_session_manager -- allows for session manager override
+  return y
 end
 
 function request(reqt, b)
@@ -165,4 +202,13 @@ function tcp(scheme)
   o.ssl = scheme == "https"
   o._last_err = e
   return o
+end
+
+function clearca()
+  return lxyssl.clearca()
+end
+
+function addca(ca_pem)
+  local r = lxyssl.addca(ca_pem)
+  return r 
 end
