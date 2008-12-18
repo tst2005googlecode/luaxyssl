@@ -49,8 +49,10 @@ $T:	$(XYSSL_LIB) $(OBJS)
 !endif
 
 install: $(T)
-	copy $(T) $(LUA_INSTALL_LIBDIR)\ 
+	copy $(T) $(LUA_INSTALL_LIBDIR) 
 	copy lua\*.lua $(LUA_INSTALL_DIR)
+  xcopy lua\socket $(LUA_INSTALL_DIR)/s/y
+
 
 clean:
 	cd xyssl-0.$(XYSSL_VERSION)/library && nmake -f Makefile.win clean && cd ../..

@@ -15,7 +15,7 @@ XYSSL_FEATURES= -DXYSSL_HAVE_LONGLONG -DXYSSL_HAVE_RDTSC -DNO_GENPRIME -DNO_MD2 
 #XYSSL_FEATURES= -DXYSSL_HAVE_LONGLONG -DXYSSL_HAVE_RDTSC -DNO_GENPRIME -DNO_MD2 -DNO_MD4 -DXYSSL_HAVE_SSE2 $(XYSSL_DEBUG)
 MYNAME= lxyssl
 # no need to change anything below here
-CFLAGS= $(INCS) $(DEFS) $(WARN) -O2 $G -I$(XYSSL_INC) -DXYSSL=$(XYSSL_VERSION) $(XYSSL_FEATURES)
+CFLAGS= $(INCS) $(DEFS) $(WARN) -O2 -fPIC $G -I$(XYSSL_INC) -DXYSSL=$(XYSSL_VERSION) $(XYSSL_FEATURES)
 LDFLAGS= -L$(XYSSL_LIB) 
 WARN= #-ansi -pedantic -Wall
 INCS= -I$(LUAINC) 
@@ -31,7 +31,7 @@ LUA_MODULES=bufferio.lua ssl.lua security.lua
 all: so 
 	
 $(XYSSL_LIB)/libxyssl.a: 
-	cd xyssl-0.$(XYSSL_VERSION)/library && make all XYSSL_CFLAGS="$(XYSSL_FEATURES)" && cd ../..
+	cd xyssl-0.$(XYSSL_VERSION)/library && make all XYSSL_CFLAGS="-fPIC $(XYSSL_FEATURES)" && cd ../..
 
 o:	$(MYLIB).o
 
@@ -46,7 +46,8 @@ clean:
 	rm -f $(OBJS) $T core core.* a.out 
 
 install: $T
-	install lua/* $(LUA_INSTALL_DIR)/
+	install lua/*.lua $(LUA_INSTALL_DIR)
+	install -D lua/socket/* $(LUA_INSTALL_DIR)/socket
 	install $(T) $(LUA_INSTALL_LIBDIR)/
 
 doc:

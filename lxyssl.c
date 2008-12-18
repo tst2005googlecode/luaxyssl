@@ -5,6 +5,7 @@
 * This code can be distributed under the LGPL license
 */
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <memory.h>
 #include <fcntl.h>
@@ -326,7 +327,7 @@ static int my_get_session(ssl_context *ssl)
         return 1;
     }
     if (lua_isstring(L, -1)) {
-        int len;
+        size_t len;
         const char *master = luaL_checklstring(L, -1, &len);
         memcpy(ssl->session->master, master, len < sizeof(ssl->session->master) ? len : sizeof(ssl->session->master));
         lua_pop(L, 1);
@@ -355,6 +356,7 @@ static int my_set_session(ssl_context *ssl)
     lua_pop(L,1);
     return 0;
 }
+
 #endif
 
 static int arc4_rand(void *state)
@@ -479,7 +481,7 @@ static int Psetfd(lua_State *L)		/** setfd(r[,w]) */
 
 static int Laes(lua_State *L)
 {
- int klen;
+ size_t klen;
  const unsigned char *key = luaL_checklstring(L, 1, &klen);
  int bits = luaL_optinteger(L, 2, 128);
  dual_aes_context *aes = lua_newuserdata(L,sizeof(dual_aes_context));
@@ -503,7 +505,7 @@ static int Laes(lua_State *L)
 
 static int Lrc4(lua_State *L)
 {
- int klen;
+ size_t klen;
  const unsigned char *key = luaL_checklstring(L, 1, &klen);
  arc4_context *rc4 = lua_newuserdata(L,sizeof(arc4_context));
  arc4_setup(rc4, (unsigned char *)key, klen);
@@ -750,7 +752,7 @@ static int Levent(lua_State *L)
 static int Lhash(lua_State *L)
 {
  const char *type = luaL_checkstring(L,1);
- int klen=0;
+ size_t klen=0;
  const unsigned char *key = luaL_optlstring(L, 2, NULL, &klen);
  hash_context *obj = lua_newuserdata(L,sizeof(hash_context));
  
@@ -869,7 +871,7 @@ static int Lhash_reset(lua_State *L)
 static int Laes_encrypt(lua_State *L)
 {
  dual_aes_context *obj=Pget_aes(L,1);
- int len;
+ size_t len;
  const char *data = luaL_checklstring(L, 2, &len);
  int i;
  luaL_Buffer B;
@@ -890,7 +892,7 @@ static int Laes_encrypt(lua_State *L)
 static int Laes_decrypt(lua_State *L)
 {
  dual_aes_context *obj=Pget_aes(L,1);
- int len;
+ size_t len;
  const char *data = luaL_checklstring(L, 2, &len);
  int i;
  luaL_Buffer B;
@@ -911,7 +913,7 @@ static int Laes_decrypt(lua_State *L)
 static int Lrc4_crypt(lua_State *L)
 {
  arc4_context *obj=Pget_rc4(L,1);
- int len;
+ size_t len;
  const char *data = luaL_checklstring(L, 2, &len);
  luaL_Buffer B;
  unsigned char temp[256];
@@ -938,9 +940,9 @@ static int Lrc4_crypt(lua_State *L)
 static int Laes_cbc_encrypt(lua_State *L)
 {
  dual_aes_context *obj=Pget_aes(L,1);
- int len;
+ size_t len;
  const char *data = luaL_checklstring(L, 2, &len);
- int iv_len;
+ size_t iv_len;
  const char *IV = luaL_checklstring(L, 3, &iv_len);
  int i=0;
  luaL_Buffer B;
@@ -970,9 +972,9 @@ static int Laes_cbc_encrypt(lua_State *L)
 static int Laes_cbc_decrypt(lua_State *L)
 {
  dual_aes_context *obj=Pget_aes(L,1);
- int len;
+ size_t len;
  const char *data = luaL_checklstring(L, 2, &len);
- int iv_len;
+ size_t iv_len;
  const char *IV = luaL_checklstring(L, 3, &iv_len);
  int i;
  luaL_Buffer B;
@@ -1002,9 +1004,9 @@ static int Laes_cbc_decrypt(lua_State *L)
 static int Laes_cfb_encrypt(lua_State *L)
 {
  dual_aes_context *obj=Pget_aes(L,1);
- int len;
+ size_t len;
  const char *data = luaL_checklstring(L, 2, &len);
- int iv_len;
+ size_t iv_len;
  const char *IV = luaL_checklstring(L, 3, &iv_len);
  int start = luaL_optinteger(L,4,0);
  int i;
@@ -1039,9 +1041,9 @@ static int Laes_cfb_encrypt(lua_State *L)
 static int Laes_cfb_decrypt(lua_State *L)
 {
  dual_aes_context *obj=Pget_aes(L,1);
- int len;
+ size_t len;
  const char *data = luaL_checklstring(L, 2, &len);
- int iv_len;
+ size_t iv_len;
  const char *IV = luaL_checklstring(L, 3, &iv_len);
  int start = luaL_optinteger(L,4,0);
  int i;
@@ -1079,7 +1081,7 @@ static int Laes_cfb_decrypt(lua_State *L)
 static int Lhash_update(lua_State *L)
 {
  hash_context *obj=Pget_hash(L,1);
- int len;
+ size_t len;
  const char *data = luaL_checklstring(L, 2, &len);
  obj->update(&obj->eng, (unsigned char *)data, len);
  lua_pushvalue(L, 1);
@@ -1091,7 +1093,7 @@ static int Lhash_digest(lua_State *L)
 {
  hash_context *obj=Pget_hash(L,1);
  unsigned char out[64];
- int len;
+ size_t len;
  const char *data = luaL_optlstring(L, 2, "", &len);
  obj->update(&obj->eng, (unsigned char *)data, len);
  obj->finish(&obj->eng, out);
@@ -1163,10 +1165,21 @@ static int Lprobe(lua_State *L)
  #endif
 }
 
+static int LhasTrustedCA(lua_State *L)
+{
+  xyssl_context *xyssl=Pget(L,1);
+  x509_cert     *cacert = &xyssl->cacert;
+  if (trustedCA.next || cacert->next) {
+    lua_pushboolean(L, 1);
+    return 1;
+  }
+  return 0;
+}
+
 static int LaddTrustedCA(lua_State *L)
 {
  int ret; 
- int ca_len;
+ size_t ca_len;
  const char *ca = luaL_checklstring(L, 1, &ca_len);
  
  ret = x509_add_certs( &trustedCA, (unsigned char *) ca, ca_len);
@@ -1195,7 +1208,7 @@ static int Lssl_state(lua_State *L)
 static int Lssl(lua_State *L)
 {
  int ret;
- int is_server = luaL_optinteger(L,1,0);
+ int is_server = lua_toboolean(L,1);
  char *dhm_P = (char *)luaL_optstring(L, 2, default_dhm_P);
  char *dhm_G = (char *)luaL_optstring(L, 3, default_dhm_G);
  xyssl_context *xyssl=lua_newuserdata(L,sizeof(xyssl_context));
@@ -1311,9 +1324,9 @@ static int Lclose(lua_State *L)			/** close(c) */
 static int Lsessinfo(lua_State *L)			/** sessinfo(c) */
 {
  xyssl_context *xyssl=Pget(L,1);
- int id_len;
+ size_t id_len;
  char *sessid = (char *)luaL_optlstring(L, 2, NULL, &id_len);
- int master_len;
+ size_t master_len;
  char *master = (char *)luaL_optlstring(L, 3, NULL, &master_len);
  int cipher = (int) luaL_optnumber(L,4,0);
  time_t start = (time_t) luaL_optnumber(L,5,time(NULL));
@@ -1437,6 +1450,9 @@ static int Lsend(lua_State *L)		/** send(data) */
         #if 0
         sprintf(buf,"receive-handshake(%d)", errno);
         #endif
+      }
+      else if (err == XYSSL_ERR_X509_CERT_VERIFY_FAILED) {
+          lua_pushstring(L,"untrusted host");
       } else {
         lua_pushstring(L,"closed");
         #if 0
@@ -1526,16 +1542,22 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
         #if 0
         else lua_pushstring(L,"handshake");
         #else
+        else if (ret == XYSSL_ERR_X509_CERT_VERIFY_FAILED) {
+            lua_pushstring(L,"untrusted host");
+            xyssl->closed = 1;
+        }
         else {
           char buf[64];
           xyssl->closed = 1;
           if (ret == XYSSL_ERR_NET_RECV_FAILED && errno > 0) {
             lua_pushstring(L,"closed");
+            xyssl->closed = 1;
             #if 0
             sprintf(buf,"receive-handshake(%d)", errno);
             #endif
           } else {
             lua_pushstring(L,"closed");
+            xyssl->closed = 1;
             #if 0
             sprintf(buf,"receive-handshake(0x%0x)", ret & 0xffff);
             #endif
@@ -1563,8 +1585,24 @@ static int Lreceive(lua_State *L)		/** receive(cnt) */
  return lua_gettop(L) - top;
 }
 
+static int my_gc(lua_State *L)
+{
+    int ret;
+    xyssl_context *xyssl=Pget(L,1);
+    lua_pushstring(L, "gc");
+    lua_gettable(L, 1);
+    if (lua_isnil(L, -1)) {
+        lua_pop(L,1);
+        return 0;
+    }
+    lua_pushvalue(L, 1);
+    ret = lua_pcall(L, 1, 0, 0);
+    return 0;
+}
+
 static int Lgc(lua_State *L)		/** garbage collect */
 {
+
  xyssl_context *xyssl=Pget(L,1);
  ssl_context *ssl=&xyssl->ssl;
  x509_cert *mycert= &xyssl->mycert;
@@ -1591,13 +1629,14 @@ static int Lgc(lua_State *L)		/** garbage collect */
  }
 
  ssl_objects-=1;
+
  return 0;
 }
 
 static int LsessionCA(lua_State *L) /** setca(ca) **/
 {
  int top = lua_gettop(L);
- int ca_len;
+ size_t ca_len;
  int ret;
  xyssl_context *xyssl=Pget(L,1);
  x509_cert *cacert = &xyssl->cacert;
@@ -1616,7 +1655,7 @@ static int LsessionCA(lua_State *L) /** setca(ca) **/
  return 1;
 }
 
-static int Lkeycert(lua_State *L)		/** set the key/cert to use */
+static int Lcertkey(lua_State *L)		/** set the key/cert to use */
 {
  int    top = lua_gettop(L);
 
@@ -1624,9 +1663,9 @@ static int Lkeycert(lua_State *L)		/** set the key/cert to use */
  ssl_context *ssl=&xyssl->ssl;
  x509_cert *mycert= &xyssl->mycert;
  rsa_context *rsa = &xyssl->mykey;
- int cert_len;
- int key_len;
- int pwd_len;
+ size_t cert_len;
+ size_t key_len;
+ size_t pwd_len;
  int ret;
  const char *cert = luaL_optlstring(L, 2, ssl->endpoint ? test_srv_crt: NULL, &cert_len);
  const char *key = luaL_optlstring(L, 3, ssl->endpoint ? test_srv_key: NULL, &key_len);
@@ -1694,7 +1733,7 @@ static int Lauthmode(lua_State *L)		/** authmode(level) */
  ssl_context *ssl=&xyssl->ssl;
  x509_cert *cacert = &xyssl->cacert;
  int verification = luaL_optinteger(L,2,0);
- int peer_len;
+ size_t peer_len;
  const char *expected_peer= luaL_optlstring(L, 3, NULL, &peer_len);
  ssl_set_authmode( ssl, verification );
  if (xyssl->peer_cn) free(xyssl->peer_cn);
@@ -1748,8 +1787,8 @@ static int Lverify(lua_State *L)		/** verify() */
 static int Lx509verify(lua_State *L)		/** x509verify(ca, crt) */
 {
  int top = lua_gettop(L);
- int crt_size;
- int ca_size;
+ size_t crt_size;
+ size_t ca_size;
  int ret;
  int flag;
  x509_cert ca;
@@ -1797,9 +1836,9 @@ free_ca:
 static int Lrsaverify(lua_State *L)		/** rsaverify(data, sig, [crt]) */
 {
  int top = lua_gettop(L);
- int crt_size;
- int data_size;
- int sig_size;
+ size_t crt_size;
+ size_t data_size;
+ size_t sig_size;
  int ret;
  x509_cert cert;
  const char *data = luaL_checklstring(L, 1, &data_size);
@@ -1833,8 +1872,8 @@ free_cert:
 static int Lrsaencrypt(lua_State *L)		/** rsaencrypt(data, [crt]) */
 {
  int top = lua_gettop(L);
- int crt_size;
- int data_size;
+ size_t crt_size;
+ size_t data_size;
  unsigned char m[512];
  int ret;
  x509_cert cert;
@@ -1868,9 +1907,9 @@ free_cert:
 static int Lrsasign(lua_State *L)		/** rsasign(data, [key, [pw]]) */
 {
  int top = lua_gettop(L);
- int key_size;
- int data_size;
- int pwd_len;
+ size_t key_size;
+ size_t data_size;
+ size_t pwd_len;
  int ret;
  unsigned char sig[512];
  rsa_context rsa;
@@ -1905,9 +1944,9 @@ free_key:
 static int Lrsadecrypt(lua_State *L)		/** rsadecrypt(data, [key, [pw]]) */
 {
  int top = lua_gettop(L);
- int key_size;
- int data_size;
- int pwd_len;
+ size_t key_size;
+ size_t data_size;
+ size_t pwd_len;
  int out_len;
  int ret;
  unsigned char m[512];
@@ -2076,8 +2115,8 @@ static int Ltostring(lua_State *L)		/** tostring(c) */
 static int Ldhmsecret(lua_State *L) /** dhsecret(public, private, [P, [G]]) */
 {
  int top = lua_gettop(L);
- int public_size;
- int private_size;
+ size_t public_size;
+ size_t private_size;
  int ret;
  dhm_context dhm;
  unsigned char buf[512];
@@ -2212,9 +2251,10 @@ static const luaL_reg R[] =
 	{ "settimeout",	Lsettimeout},
 	{ "gettimeout",	Lgettimeout},
 	{ "getssl",	Lgetssl},
-	{ "keycert",Lkeycert},
+	{ "certkey",Lcertkey},
 	{ "connect",	Lconnect	},
 	{ "setca",	LsessionCA	},
+	{ "hasca",	LhasTrustedCA	},
 	{ NULL,		NULL	}
 };
 

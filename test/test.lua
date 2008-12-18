@@ -4,8 +4,9 @@ require'lxyssl'
 require'security'
 require'ssl'
 ca={}
-for k in io.popen('dir /etc/ssl/certs/*.pem'):lines() do table.insert(ca,io.open(k):read('*a')) end
-assert(lxyssl.addca(table.concat(ca)))
+ssl.addca(io.open('xyssl-0.9/programs/ssl/test-ca/test-ca.crt'):read("*a"))
+--for k in io.popen('dir /etc/ssl/certs/*.pem'):lines() do table.insert(ca,io.open(k):read('*a')) end
+--assert(lxyssl.addca(table.concat(ca)))
 
 string.hex = function(x)
     local t={}
@@ -61,8 +62,8 @@ gyx = security.dh.secret(gy, x, p, g)
 assert(gxy==gyx)
 
 host='www.google.com'
---host='www.yahoo.com'
-host='www.microsoft.com'
+host='www.yahoo.com'
+--host='www.microsoft.com'
 --host='www.dreamhost.com'
 port=443
 --x:connect(t:getfd())
@@ -75,8 +76,7 @@ t=socket.tcp()
 t:connect(host,port)
 --b:connect(t:getfd())
 b = ssl.stream(t)
---b:keycert()
-b:authmode(1,host)
+--b:authmode(1,host)
 --b:debug(2)
 --b:debug(0)
 if id then 
@@ -210,6 +210,6 @@ yz = lxyssl.dhmsecret(gz,y, p,g)
 zx = lxyssl.dhmsecret(gx,z, p,g)
 xz = lxyssl.dhmsecret(gz,x, p,g)
 assert(xy==yx and zy == yz and xz==zx)
-print(#xy,#gx,#p,#g)
 
+print(ssl.request('https://www.yahoo.com'))
 print("test done")
